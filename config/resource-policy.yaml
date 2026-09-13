@@ -1,0 +1,36 @@
+version: 1
+profile: dell-xps-32gb-seed
+
+memory:
+  heavy_min_available_gib: 6
+  light_min_available_gib: 2
+
+root_disk:
+  min_free_gib: 15
+  max_used_percent: 90
+
+load:
+  # Multiplier against logical CPU count. A value of 1.5 means a 12-thread
+  # machine begins refusing new heavy work above a 1-minute load of 18.
+  heavy_max_load_per_cpu: 1.5
+
+swap:
+  # Refuse new heavy jobs if used swap exceeds this percentage. Zero-swap
+  # systems naturally pass this check.
+  heavy_max_used_percent: 60
+
+thermal:
+  enabled: true
+  # Best effort only: if Linux thermal zones expose no readable temperatures,
+  # temperature does not block admission. Tune from real-XPS evidence.
+  heavy_max_celsius: 90
+
+concurrency:
+  heavy_slots: 2
+
+metrics:
+  textfile_directory: /var/lib/frankensteinzhermes/metrics/textfile
+  filename: governor.prom
+
+runtime:
+  lock_directory: /run/frankensteinzhermes/governor
