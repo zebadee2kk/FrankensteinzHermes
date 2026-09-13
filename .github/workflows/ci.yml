@@ -31,13 +31,13 @@ jobs:
       - name: Compile validation scripts
         run: python -m compileall -q scripts
 
-      - name: Validate bootstrap shell syntax
+      - name: Validate shell syntax
         shell: bash
         run: |
           set -euo pipefail
           while IFS= read -r -d '' script; do
             bash -n "$script"
-          done < <(find bootstrap -type f -name '*.sh' -print0 2>/dev/null)
+          done < <(find bootstrap scripts -type f -name '*.sh' -print0 2>/dev/null)
 
       - name: Validate Compose runtime contract
         shell: bash
@@ -84,3 +84,62 @@ jobs:
         with:
           fail-on-severity: high
           comment-summary-in-pr: never
+
+  postgres-contract:
+    name: postgres-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FZH_POSTGRES_PASSWORD_FILE: ${{ runner.temp }}/fzh-secrets/postgres_password
+      FZH_BACKUP_DIR: ${{ runner.temp }}/fzh-backups
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Create ephemeral database secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 0700 "$(dirname "$FZH_POSTGRES_PASSWORD_FILE")"
+          openssl rand -base64 36 > "$FZH_POSTGRES_PASSWORD_FILE"
+          chmod 0600 "$FZH_POSTGRES_PASSWORD_FILE"
+
+      - name: Start PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml up -d postgres
+          for _ in $(seq 1 60); do
+            if docker compose -f deploy/compose/compose.yaml exec -T postgres \
+              pg_isready --username=frankensteinz --dbname=frankensteinz >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose -f deploy/compose/compose.yaml logs postgres
+          exit 1
+
+      - name: Apply migrations twice to prove idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/postgres/migrate.sh
+          bash scripts/postgres/migrate.sh
+
+      - name: Create validated backup
+        id: backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup_path="$(bash scripts/postgres/backup.sh)"
+          test -s "$backup_path"
+          echo "path=$backup_path" >> "$GITHUB_OUTPUT"
+
+      - name: Restore backup into disposable PostgreSQL
+        shell: bash
+        run: bash scripts/postgres/restore-test.sh "${{ steps.backup.outputs.path }}"
+
+      - name: Tear down CI database state
+        if: always()
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml --profile restore-test down -v --remove-orphans
