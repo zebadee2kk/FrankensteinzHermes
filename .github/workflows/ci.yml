@@ -31,6 +31,14 @@ jobs:
       - name: Compile validation scripts
         run: python -m compileall -q scripts
 
+      - name: Validate bootstrap shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(find bootstrap -type f -name '*.sh' -print0 2>/dev/null)
+
       - name: Validate architecture and machine-readable policy
         run: python scripts/validate_repo.py
 
