@@ -99,9 +99,36 @@ def validate_hermes_pin() -> None:
     for key in ("sudo", "docker_socket", "canonical_repo_write", "repository_admin", "security_policy_write"):
         if authority.get(key) is not False:
             fail(f"Hermes runtime authority must keep {key}=false")
-    upgrade = data.get("upgrade", {})
-    if upgrade.get("automatic") is not False:
+    if data.get("upgrade", {}).get("automatic") is not False:
         fail("Hermes production upgrades must not track upstream automatically")
+
+
+def validate_litellm_boundary() -> None:
+    config = load_yaml("deploy/compose/litellm/config.yaml")
+    if config.get("model_list") != []:
+        fail("B021 LiteLLM boundary must remain provider-free until B022/B023")
+    master_key = config.get("general_settings", {}).get("master_key")
+    if master_key != "os.environ/LITELLM_MASTER_KEY":
+        fail("LiteLLM master key must come from environment")
+
+    compose = (ROOT / "deploy/compose/compose.yaml").read_text(encoding="utf-8")
+    required_fragments = [
+        "image: ghcr.io/berriai/litellm:v1.100.1",
+        '"127.0.0.1:${FZH_LITELLM_PORT:-4000}:4000"',
+        "${FZH_LITELLM_ENV_FILE:-/etc/frankensteinzhermes/secrets/litellm.env}",
+        "- model-egress",
+    ]
+    for fragment in required_fragments:
+        if fragment not in compose:
+            fail(f"LiteLLM boundary missing required Compose fragment: {fragment}")
+    if "0.0.0.0:${FZH_LITELLM_PORT" in compose:
+        fail("LiteLLM must never publish on 0.0.0.0 in seed topology")
+
+    verifier = (ROOT / "scripts/litellm/verify-image.sh").read_text(encoding="utf-8")
+    if "0112e53046018d726492c814b3644b7d376029d0" not in verifier:
+        fail("LiteLLM signature verifier must anchor the signing key to immutable upstream commit")
+    if "cosign verify" not in verifier:
+        fail("LiteLLM image signature verification is required")
 
 
 def validate_repository_protection() -> None:
@@ -181,6 +208,7 @@ def validate_required_docs() -> None:
         "docs/operations/OBSERVABILITY.md",
         "docs/operations/RESOURCE-GOVERNOR.md",
         "docs/operations/HERMES-CORE.md",
+        "docs/operations/LITELLM-GATEWAY.md",
         "SECURITY.md",
     ]
     for relative in required:
@@ -195,6 +223,7 @@ def main() -> None:
     validate_autonomy_policy()
     validate_model_policy()
     validate_hermes_pin()
+    validate_litellm_boundary()
     validate_repository_protection()
     validate_release_evidence()
     validate_action_pins()
