@@ -1,0 +1,338 @@
+version: 1
+project: FrankensteinzHermes
+selection_policy: earliest_unblocked_highest_priority
+
+items:
+  - id: B001
+    title: Repository governance
+    phase: 0
+    priority: P0
+    depends_on: []
+    risk: L2
+    autonomy: human_gate
+    acceptance:
+      - protected production branch/ruleset defined
+      - required CI checks identified
+      - ordinary engineering identity cannot disable governance
+
+  - id: B002
+    title: CI baseline
+    phase: 0
+    priority: P0
+    depends_on: [B001]
+    risk: L1
+    acceptance:
+      - lint/test workflow runs on PR
+      - secret scan enabled
+      - dependency/security checks have documented fail policy
+
+  - id: B003
+    title: Architecture constitution
+    phase: 0
+    priority: P0
+    depends_on: []
+    risk: L2
+    autonomy: human_gate
+    acceptance:
+      - architecture documented
+      - autonomy constitution documented
+      - threat model documented
+      - state ownership documented
+      - model routing documented
+
+  - id: B004
+    title: Release evidence format
+    phase: 0
+    priority: P0
+    depends_on: [B002, B003]
+    risk: L1
+    acceptance:
+      - candidate version identifiable
+      - tests/reviews recorded
+      - baseline comparison field exists
+      - rollback method recorded
+
+  - id: B010
+    title: Ubuntu seed-host bootstrap
+    phase: 1
+    priority: P0
+    depends_on: [B004]
+    risk: L2
+    acceptance:
+      - idempotent bootstrap on Ubuntu LTS
+      - no secrets committed
+      - host firewall and SSH baseline checked
+      - reboot leaves core services recoverable
+
+  - id: B011
+    title: Docker Compose runtime
+    phase: 1
+    priority: P0
+    depends_on: [B010]
+    risk: L1
+    acceptance:
+      - compose validation passes
+      - services use pinned versions
+      - healthchecks present
+      - untrusted workers do not receive Docker socket
+
+  - id: B012
+    title: PostgreSQL durable state
+    phase: 1
+    priority: P0
+    depends_on: [B011]
+    risk: L2
+    acceptance:
+      - migrations automated
+      - backup succeeds
+      - isolated restore test succeeds
+
+  - id: B013
+    title: Basic observability
+    phase: 1
+    priority: P0
+    depends_on: [B011]
+    risk: L1
+    acceptance:
+      - core health visible
+      - structured logs available
+      - disk/RAM/service failure alerts defined
+
+  - id: B014
+    title: Seed resource governor
+    phase: 1
+    priority: P0
+    depends_on: [B013]
+    risk: L1
+    acceptance:
+      - concurrency limits enforced
+      - work pauses under memory/disk pressure
+      - core services protected from heavy workers
+
+  - id: B020
+    title: Hermes deployment
+    phase: 2
+    priority: P0
+    depends_on: [B012, B013, B014]
+    risk: L1
+    acceptance:
+      - Hermes starts automatically
+      - no direct production admin credential
+      - healthcheck and logs available
+
+  - id: B021
+    title: LiteLLM private gateway
+    phase: 2
+    priority: P0
+    depends_on: [B020]
+    risk: L2
+    acceptance:
+      - private-only endpoint
+      - unused privileged features disabled
+      - provider credentials not exposed to Hermes workers
+
+  - id: B022
+    title: OpenRouter free-first routing
+    phase: 2
+    priority: P0
+    depends_on: [B021]
+    risk: L1
+    acceptance:
+      - explicit free candidate supported
+      - free router fallback supported
+      - provider exhaustion queues rather than loops indefinitely
+
+  - id: B023
+    title: Additional approved free providers
+    phase: 2
+    priority: P1
+    depends_on: [B021]
+    risk: L2
+    acceptance:
+      - privacy/data policy recorded per provider
+      - provider can be disabled independently
+
+  - id: B024
+    title: Ollama degraded mode
+    phase: 2
+    priority: P0
+    depends_on: [B014]
+    risk: L1
+    acceptance:
+      - local inference works without Internet
+      - core services remain responsive while model is loaded
+
+  - id: B025
+    title: llmfit hardware/model benchmark
+    phase: 2
+    priority: P1
+    depends_on: [B024]
+    risk: L0
+    acceptance:
+      - actual XPS inventory recorded
+      - candidate local models benchmarked
+      - recommended local roles registered
+
+  - id: B026
+    title: Model evaluation registry
+    phase: 2
+    priority: P1
+    depends_on: [B022, B024]
+    risk: L1
+    acceptance:
+      - quality/latency/reliability results persisted
+      - router can rank only policy-eligible candidates
+
+  - id: B030
+    title: Action Gate v1
+    phase: 3
+    priority: P0
+    depends_on: [B012, B020]
+    risk: L3
+    autonomy: human_gate
+    acceptance:
+      - L0-L3 decisions deterministic
+      - allow/deny/approval decisions audited
+      - Hermes cannot change gate policy through normal runtime credentials
+      - kill switch tested
+
+  - id: B031
+    title: Autonomous job ledger
+    phase: 3
+    priority: P0
+    depends_on: [B012, B030]
+    risk: L1
+    acceptance:
+      - every job has stable ID and status
+      - retry budget persisted
+      - interrupted jobs never silently duplicate side effects
+
+  - id: B032
+    title: Engineering implementation worker
+    phase: 3
+    priority: P0
+    depends_on: [B022, B030, B031]
+    risk: L1
+    acceptance:
+      - creates branch not direct production edit
+      - finite model/tool/time budgets enforced
+
+  - id: B033
+    title: Independent reviewer
+    phase: 3
+    priority: P0
+    depends_on: [B032]
+    risk: L0
+    acceptance:
+      - reviewer separated from implementation context
+      - findings stored with candidate evidence
+
+  - id: B034
+    title: QA adversarial worker
+    phase: 3
+    priority: P0
+    depends_on: [B032]
+    risk: L0
+    acceptance:
+      - tests acceptance criteria and failure paths
+      - can block promotion
+
+  - id: B035
+    title: Security reviewer
+    phase: 3
+    priority: P0
+    depends_on: [B032]
+    risk: L0
+    acceptance:
+      - scans secrets/dependencies/permissions/exposure
+      - can block promotion
+
+  - id: B036
+    title: Release and rollback worker
+    phase: 3
+    priority: P0
+    depends_on: [B033, B034, B035]
+    risk: L2
+    acceptance:
+      - staging deployment automated
+      - verification evidence produced
+      - rollback to last-known-good tested
+
+  - id: B037
+    title: Autonomous backlog selector
+    phase: 3
+    priority: P0
+    depends_on: [B036]
+    risk: L1
+    acceptance:
+      - selects only dependency-unblocked items
+      - respects autonomy/risk class
+      - produces owner exception queue rather than routine prompts
+
+  - id: B040
+    title: Memory and knowledge foundation
+    phase: 4
+    priority: P1
+    depends_on: [B037]
+    risk: L2
+    expands_to: [GBrain, COG, LightRAG, memory_write_policy, retrieval_eval]
+
+  - id: B050
+    title: Tool plane foundation
+    phase: 5
+    priority: P1
+    depends_on: [B030, B040]
+    risk: L2
+    expands_to: [capability_registry, n8n, github_tools, isolated_browser, quarantine, egress_policy]
+
+  - id: B060
+    title: Dogfood engineering enhancements
+    phase: 6
+    priority: P1
+    depends_on: [B037]
+    risk: L1
+    expands_to: [GitNexus, grepai, Understand-Anything, code-review-graph, Promptfoo, security_scanners, skill_management]
+
+  - id: B070
+    title: Durable autonomy infrastructure
+    phase: 7
+    priority: P2
+    depends_on: [B037]
+    trigger: seed_job_mechanism_proven_insufficient
+    risk: L2
+    expands_to: [Temporal, NATS_JetStream, AsyncAPI, shadow_canary_framework]
+
+  - id: B080
+    title: Additional compute enrolment
+    phase: 8
+    priority: P2
+    depends_on: [B037]
+    risk: L2
+    expands_to: [Apple_Silicon_worker, Proxmox_workers, NAS_backup, Mesh-LLM, SIE]
+
+  - id: B090
+    title: Companion experience
+    phase: 9
+    priority: P2
+    depends_on: [B040, B050]
+    risk: L1
+    expands_to: [CopilotKit, desktop, voice, notifications, daily_owner_brief]
+
+  - id: B100
+    title: Specialist domain pods
+    phase: 10
+    priority: P3
+    depends_on: [B050, B080]
+    risk: L2
+
+  - id: B110
+    title: Continuous self-improvement loop
+    phase: 11
+    priority: P2
+    depends_on: [B060, B070]
+    risk: L2
+    acceptance:
+      - telemetry can generate improvement hypotheses
+      - candidates benchmark against baseline
+      - regressions roll back automatically
+      - constitutional changes remain human-owned
