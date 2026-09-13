@@ -32,7 +32,7 @@ services:
       POSTGRES_DB: ${FZH_POSTGRES_DB:-frankensteinz}
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
       - ${FZH_POSTGRES_PASSWORD_FILE:-/etc/frankensteinzhermes/secrets/postgres_password}:/run/secrets/postgres_password:ro
     tmpfs:
       - /tmp:size=64m,mode=1777
@@ -62,7 +62,7 @@ services:
     volumes:
       - ${FZH_POSTGRES_PASSWORD_FILE:-/etc/frankensteinzhermes/secrets/postgres_password}:/run/secrets/postgres_password:ro
     tmpfs:
-      - /var/lib/postgresql/data:size=1g,mode=0700
+      - /var/lib/postgresql:size=1g,mode=0700
       - /tmp:size=64m,mode=1777
       - /var/run/postgresql:size=16m,mode=0775
     security_opt:
