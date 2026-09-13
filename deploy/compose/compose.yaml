@@ -62,7 +62,10 @@ services:
     volumes:
       - ${FZH_POSTGRES_PASSWORD_FILE:-/etc/frankensteinzhermes/secrets/postgres_password}:/run/secrets/postgres_password:ro
     tmpfs:
-      - /var/lib/postgresql:size=1g,mode=0700
+      # PG18 creates its version-specific PGDATA beneath this parent. The parent
+      # must be writable during entrypoint initialization; PGDATA itself is
+      # subsequently restricted by PostgreSQL.
+      - /var/lib/postgresql:size=1g,mode=1777
       - /tmp:size=64m,mode=1777
       - /var/run/postgresql:size=16m,mode=0775
     security_opt:
