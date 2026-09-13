@@ -1,0 +1,9 @@
+model_list: []
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  # Provider models are introduced by B022/B023. Keep B021 as a gateway-only
+  # boundary so health/auth/network behaviour can be proven independently.
+  drop_params: true
