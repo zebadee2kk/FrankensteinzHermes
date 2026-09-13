@@ -1,21 +1,27 @@
-version: 1
+version: 2
 repository: zebadee2kk/FrankensteinzHermes
 production_branch: main
 
+enforcement:
+  github_ruleset: unavailable_on_current_plan
+  mode: credential_boundary_and_ci
+  accepted_by_owner: true
+  note: >-
+    GitHub Free does not provide the required repository ruleset capability for this project.
+    This is an accepted platform constraint, not a production blocker. Autonomous identities
+    must therefore be prevented from obtaining upstream write/admin authority rather than
+    relying on branch protection they could otherwise bypass.
+
 required:
-  pull_request: true
-  direct_push: false
-  force_push: false
-  deletion: false
-  conversation_resolution: true
-  linear_history: false
-  signed_commits: preferred
+  pull_request_workflow: true
+  automated_ci_before_promotion: true
+  direct_push_by_autonomous_identity: false
+  force_push_by_autonomous_identity: false
+  constitutional_owner_review: true
   required_status_checks:
-    strict: true
-    contexts:
-      - governance
-      - secret-scan
-      - dependency-review
+    - governance
+    - secret-scan
+    - dependency-review
 
 constitutional_paths:
   - docs/AUTONOMY-CONSTITUTION.md
@@ -25,18 +31,33 @@ constitutional_paths:
   - config/autonomy-policy.example.yaml
   - .github/CODEOWNERS
 
-owner_review:
-  required_for_constitutional_paths: true
-  owner: zebadee2kk
-
 engineering_identity:
   repository_admin: false
   ruleset_admin: false
   secret_admin: false
-  can_create_branch: true
+  upstream_contents_write: false
+  upstream_workflow_admin: false
   can_create_pull_request: true
+  contribution_mode: fork_or_owner_mediated_branch
+  note: >-
+    When autonomous GitHub development is enabled, use a dedicated engineering identity or
+    GitHub App whose upstream permissions cannot write repository contents. The preferred hard
+    boundary is a separate fork/work repository from which PRs are opened to this repository.
 
-break_glass:
+runtime_identity:
+  upstream_contents_write: false
+  repository_admin: false
+  secret_admin: false
+  default_repository_access: read_only
+
+owner_break_glass:
   held_by_owner_only: true
   ordinary_runtime_access: false
   use_requires_audit_note: true
+
+promotion:
+  until_hard_upstream_protection_is_available:
+    merges_performed_by: owner_or_explicit_owner_authorized_session
+    ci_must_pass: true
+    constitutional_changes_require_owner_decision: true
+    autonomous_agent_may_self_merge: false
