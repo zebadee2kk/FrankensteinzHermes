@@ -1,0 +1,74 @@
+version: 1
+
+strategy: free_first
+paid_fallback_enabled: false
+
+classifications:
+  PUBLIC:
+    remote_allowed: true
+  INTERNAL:
+    remote_allowed: approved_providers_only
+  CONFIDENTIAL:
+    remote_allowed: zero_retention_no_training_only
+  SECRET:
+    remote_allowed: false
+
+roles:
+  coding:
+    requirements:
+      cost_class: free
+      tool_calling: preferred
+      structured_output: preferred
+      min_context: 64000
+    fallbacks:
+      - approved_free_models
+      - openrouter_free_router
+      - local_ollama
+      - queue
+
+  review:
+    requirements:
+      cost_class: free
+      independent_from_implementer: true
+    fallbacks:
+      - approved_free_models
+      - alternate_free_provider
+      - local_ollama
+      - queue
+
+  classification:
+    requirements:
+      cost_class: free_or_local
+    prefer_local: true
+
+  degraded_assistant:
+    requirements:
+      local_only: true
+
+providers:
+  openrouter:
+    enabled: true
+    free_models_only: true
+    free_router_fallback: true
+  gemini_free:
+    enabled: false
+    allowed_classifications:
+      - PUBLIC
+  nvidia_free:
+    enabled: false
+    allowed_classifications:
+      - PUBLIC
+      - INTERNAL
+  ollama:
+    enabled: true
+    local: true
+
+limits:
+  max_free_provider_retries_per_task: 4
+  max_provider_switches_per_task: 5
+  queue_when_exhausted: true
+
+benchmarking:
+  enabled: true
+  allow_auto_reorder_within_approved_providers: true
+  require_shadow_evaluation_for_material_router_change: true
