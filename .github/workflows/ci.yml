@@ -101,6 +101,49 @@ jobs:
       - name: Run governor contract tests
         run: python -m unittest -v tests.test_governor
 
+  litellm-contract:
+    name: litellm-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create ephemeral LiteLLM master key file
+        shell: bash
+        run: |
+          set -euo pipefail
+          env_file="$RUNNER_TEMP/litellm.env"
+          printf 'LITELLM_MASTER_KEY=%s\n' "sk-$(openssl rand -hex 32)" > "$env_file"
+          chmod 0600 "$env_file"
+          echo "FZH_LITELLM_ENV_FILE=$env_file" >> "$GITHUB_ENV"
+          echo "FZH_LITELLM_PORT=14000" >> "$GITHUB_ENV"
+      - name: Start loopback-only LiteLLM gateway
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml up -d litellm
+      - name: Verify health and loopback binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          ok=false
+          for _ in $(seq 1 90); do
+            if curl --fail --silent --max-time 3 http://127.0.0.1:14000/health/liveliness >/dev/null 2>&1; then
+              ok=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$ok" != true ]]; then
+            docker compose -f deploy/compose/compose.yaml ps
+            docker compose -f deploy/compose/compose.yaml logs litellm
+            exit 1
+          fi
+          published="$(docker compose -f deploy/compose/compose.yaml port litellm 4000)"
+          [[ "$published" == 127.0.0.1:* ]] || { echo "LiteLLM not loopback-only: $published" >&2; exit 1; }
+      - name: Tear down LiteLLM contract state
+        if: always()
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml down -v --remove-orphans
+
   postgres-contract:
     name: postgres-contract
     runs-on: ubuntu-latest
