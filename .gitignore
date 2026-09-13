@@ -1,0 +1,51 @@
+# Secrets / local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Runtime state
+data/
+runtime/
+workspaces/
+quarantine/
+artifacts/
+backups/
+*.db
+*.sqlite*
+
+# Logs
+*.log
+logs/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*~
+
+# Local model/data artefacts
+models/
+*.gguf
+
+# Terraform/OpenTofu local state if introduced later
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.backup
+
+# Ansible local sensitive files if introduced later
+*.vault-password
+.vault-pass

@@ -1,0 +1,57 @@
+version: 1
+
+mode: assisted
+
+classes:
+  L0:
+    description: read_only
+    auto_execute: true
+    audit: true
+  L1:
+    description: reversible_low_risk_write
+    auto_execute: true
+    audit: true
+    require_rollback: true
+  L2:
+    description: consequential
+    auto_execute: false
+    audit: true
+    require_verification: true
+    require_rollback: true
+    approval: policy
+  L3:
+    description: critical
+    auto_execute: false
+    audit: true
+    approval: human_required
+    require_rollback: true
+
+immutable_without_owner_approval:
+  - autonomy_policy
+  - security_policy
+  - production_branch_protection
+  - backup_policy
+  - kill_switch
+  - secret_root
+  - financial_authority
+
+job_limits:
+  default:
+    wall_clock_minutes: 120
+    model_calls: 80
+    tool_calls: 120
+    delegation_depth: 4
+  heavy_engineering:
+    wall_clock_minutes: 480
+    model_calls: 250
+    tool_calls: 400
+    delegation_depth: 6
+
+finance:
+  real_money_actions: false
+
+models:
+  paid_fallback_enabled: false
+
+kill_switch:
+  autonomous_external_writes_enabled: true
