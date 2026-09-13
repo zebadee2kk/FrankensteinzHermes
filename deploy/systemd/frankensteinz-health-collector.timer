@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule FrankensteinzHermes host health metric collection
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=60s
+AccuracySec=10s
+Persistent=true
+Unit=frankensteinz-health-collector.service
+
+[Install]
+WantedBy=timers.target
