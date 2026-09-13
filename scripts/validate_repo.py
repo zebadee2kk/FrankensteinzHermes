@@ -158,6 +158,7 @@ def validate_required_docs() -> None:
         "docs/operations/CI-SECURITY.md",
         "docs/operations/RELEASE-EVIDENCE.md",
         "docs/operations/SEED-BOOTSTRAP.md",
+        "docs/operations/OBSERVABILITY.md",
         "SECURITY.md",
     ]
     for relative in required:

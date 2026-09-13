@@ -1,0 +1,23 @@
+[Unit]
+Description=FrankensteinzHermes host health metric collector
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/frankensteinzhermes/health.env
+ExecStart=/usr/local/lib/frankensteinzhermes/collect-health.sh
+User=root
+Group=root
+UMask=0022
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+ReadWritePaths=/var/lib/frankensteinzhermes/metrics/textfile
