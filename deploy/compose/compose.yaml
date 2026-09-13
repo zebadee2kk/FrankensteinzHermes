@@ -24,7 +24,67 @@ services:
     networks:
       - internal
 
+  postgres:
+    image: postgres:18.6
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${FZH_POSTGRES_USER:-frankensteinz}
+      POSTGRES_DB: ${FZH_POSTGRES_DB:-frankensteinz}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ${FZH_POSTGRES_PASSWORD_FILE:-/etc/frankensteinzhermes/secrets/postgres_password}:/run/secrets/postgres_password:ro
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=16m,mode=0775
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2.0
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=$${POSTGRES_USER} --dbname=$${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - internal
+
+  postgres-restore-test:
+    image: postgres:18.6
+    profiles: ["restore-test"]
+    environment:
+      POSTGRES_USER: ${FZH_POSTGRES_USER:-frankensteinz}
+      POSTGRES_DB: ${FZH_POSTGRES_DB:-frankensteinz}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - ${FZH_POSTGRES_PASSWORD_FILE:-/etc/frankensteinzhermes/secrets/postgres_password}:/run/secrets/postgres_password:ro
+    tmpfs:
+      - /var/lib/postgresql/data:size=1g,mode=0700
+      - /tmp:size=64m,mode=1777
+      - /var/run/postgresql:size=16m,mode=0775
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    shm_size: 128m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=$${POSTGRES_USER} --dbname=$${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - internal
+
 networks:
   internal:
     name: frankensteinzhermes-internal
     internal: true
+
+volumes:
+  postgres_data:
+    name: frankensteinzhermes-postgres-data
