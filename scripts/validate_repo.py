@@ -6,11 +6,14 @@ This is intentionally dependency-light. CI installs PyYAML before running it.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import re
 import sys
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+SHA_PIN = re.compile(r"^[0-9a-f]{40}$")
 
 
 def fail(message: str) -> None:
@@ -26,6 +29,16 @@ def load_yaml(relative: str):
         return yaml.safe_load(path.read_text(encoding="utf-8"))
     except Exception as exc:  # CI diagnostic
         fail(f"invalid YAML in {relative}: {exc}")
+
+
+def load_json(relative: str):
+    path = ROOT / relative
+    if not path.exists():
+        fail(f"required file missing: {relative}")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        fail(f"invalid JSON in {relative}: {exc}")
 
 
 def validate_backlog() -> None:
@@ -74,6 +87,60 @@ def validate_model_policy() -> None:
         fail("SECRET classification must not be remotely routed")
 
 
+def validate_repository_protection() -> None:
+    data = load_yaml("policy/repository-protection.yaml")
+    required = data.get("required", {})
+    if required.get("pull_request") is not True:
+        fail("main must require pull requests")
+    if required.get("direct_push") is not False:
+        fail("direct push to main must remain disabled in desired state")
+    if required.get("force_push") is not False:
+        fail("force push must remain disabled in desired state")
+    checks = set(required.get("required_status_checks", {}).get("contexts", []))
+    expected = {"governance", "secret-scan", "dependency-review"}
+    if not expected.issubset(checks):
+        fail(f"repository protection missing required checks: {sorted(expected - checks)}")
+    engineering = data.get("engineering_identity", {})
+    for key in ("repository_admin", "ruleset_admin", "secret_admin"):
+        if engineering.get(key) is not False:
+            fail(f"engineering identity must not have {key}")
+
+
+def validate_release_evidence() -> None:
+    schema = load_json("schemas/release-evidence.schema.json")
+    required = set(schema.get("required", []))
+    expected = {"work_item", "candidate", "risk", "summary", "tests", "reviews", "baseline", "rollback", "promotion"}
+    if not expected.issubset(required):
+        fail(f"release evidence schema missing required fields: {sorted(expected - required)}")
+
+    example = load_yaml("examples/release-evidence.example.yaml")
+    missing = expected - set(example)
+    if missing:
+        fail(f"release evidence example missing fields: {sorted(missing)}")
+    if example.get("risk") not in {"L0", "L1", "L2", "L3"}:
+        fail("release evidence example has invalid risk")
+    rollback = example.get("rollback", {})
+    if rollback.get("required") is True and not rollback.get("method"):
+        fail("required rollback must have a method")
+
+
+def validate_action_pins() -> None:
+    workflow_dir = ROOT / ".github" / "workflows"
+    for path in workflow_dir.glob("*.y*ml"):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            stripped = line.strip()
+            if not stripped.startswith("uses:"):
+                continue
+            value = stripped.split(":", 1)[1].strip().split()[0]
+            if value.startswith("./"):
+                continue
+            if "@" not in value:
+                fail(f"{path.relative_to(ROOT)}:{number} action is not pinned")
+            ref = value.rsplit("@", 1)[1]
+            if not SHA_PIN.fullmatch(ref):
+                fail(f"{path.relative_to(ROOT)}:{number} action must be pinned to a 40-character commit SHA")
+
+
 def validate_required_docs() -> None:
     required = [
         "docs/ARCHITECTURE.md",
@@ -83,6 +150,8 @@ def validate_required_docs() -> None:
         "docs/STATE-OWNERSHIP.md",
         "docs/ROADMAP.md",
         "docs/SEED-NODE.md",
+        "docs/operations/REPOSITORY-GOVERNANCE.md",
+        "docs/operations/RELEASE-EVIDENCE.md",
         "SECURITY.md",
     ]
     for relative in required:
@@ -96,6 +165,9 @@ def main() -> None:
     validate_backlog()
     validate_autonomy_policy()
     validate_model_policy()
+    validate_repository_protection()
+    validate_release_evidence()
+    validate_action_pins()
     print("FrankensteinzHermes repository validation passed")
 
 
