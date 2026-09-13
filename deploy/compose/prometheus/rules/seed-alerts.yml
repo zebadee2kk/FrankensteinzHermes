@@ -1,0 +1,82 @@
+groups:
+  - name: seed-host
+    rules:
+      - alert: FZHNodeExporterDown
+        expr: up{job="node"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Seed host metrics exporter is unavailable"
+          description: "Prometheus has been unable to scrape node_exporter for at least two minutes."
+
+      - alert: FZHRootDiskLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+            /
+            node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}
+          ) < 0.10
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Seed host root filesystem has less than 10% free space"
+          description: "Low disk space can stop PostgreSQL, model downloads and autonomous work."
+
+      - alert: FZHMemoryPressure
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Seed host has less than 10% memory available"
+          description: "Sustained memory pressure should pause heavy autonomous work before the host starts thrashing."
+
+      - alert: FZHHealthCollectorMissing
+        expr: absent(fzh_health_snapshot_timestamp_seconds)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "FrankensteinzHermes health collector metrics are missing"
+          description: "The host-side health collector may not be installed, running, or writing its textfile metrics."
+
+      - alert: FZHHealthCollectorStale
+        expr: (time() - fzh_health_snapshot_timestamp_seconds) > 180
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "FrankensteinzHermes health snapshot is stale"
+          description: "No fresh host-side service-health snapshot has been written for more than three minutes."
+
+      - alert: FZHComposeServiceNotRunning
+        expr: fzh_compose_service_running == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A FrankensteinzHermes Compose service is not running"
+          description: "Service {{ $labels.service }} has not been running for at least two minutes."
+
+      - alert: FZHComposeServiceUnhealthy
+        expr: fzh_compose_service_healthcheck_present == 1 and fzh_compose_service_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "A FrankensteinzHermes Compose service is unhealthy"
+          description: "Service {{ $labels.service }} has failed its Docker healthcheck for at least two minutes."
+
+      - alert: FZHPostgresBackupStale
+        expr: |
+          fzh_postgres_backup_last_success_timestamp_seconds > 0
+          and
+          (time() - fzh_postgres_backup_last_success_timestamp_seconds) > 90000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latest PostgreSQL backup is older than 25 hours"
+          description: "The seed RPO target is 24 hours once scheduled backups are enabled."
