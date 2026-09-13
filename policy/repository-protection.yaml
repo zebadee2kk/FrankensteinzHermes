@@ -1,0 +1,42 @@
+version: 1
+repository: zebadee2kk/FrankensteinzHermes
+production_branch: main
+
+required:
+  pull_request: true
+  direct_push: false
+  force_push: false
+  deletion: false
+  conversation_resolution: true
+  linear_history: false
+  signed_commits: preferred
+  required_status_checks:
+    strict: true
+    contexts:
+      - governance
+      - secret-scan
+      - dependency-review
+
+constitutional_paths:
+  - docs/AUTONOMY-CONSTITUTION.md
+  - docs/ARCHITECTURE.md
+  - docs/THREAT-MODEL.md
+  - policy/**
+  - config/autonomy-policy.example.yaml
+  - .github/CODEOWNERS
+
+owner_review:
+  required_for_constitutional_paths: true
+  owner: zebadee2kk
+
+engineering_identity:
+  repository_admin: false
+  ruleset_admin: false
+  secret_admin: false
+  can_create_branch: true
+  can_create_pull_request: true
+
+break_glass:
+  held_by_owner_only: true
+  ordinary_runtime_access: false
+  use_requires_audit_note: true
