@@ -1,0 +1,37 @@
+work_item: B004
+candidate:
+  commit: 0000000000000000000000000000000000000000
+  artifact: null
+  artifact_digest: null
+risk: L1
+summary: Define and validate the autonomous release evidence contract.
+
+tests:
+  - name: repository-validation
+    status: pass
+    evidence: CI governance job
+
+reviews:
+  independent: pass
+  security: pass
+  qa: pass
+
+baseline:
+  comparison_required: false
+  result: not_applicable
+  evidence: Documentation/schema control change; no runtime baseline exists yet.
+
+staging:
+  status: not_required
+  evidence: No runtime deployment in this change.
+
+rollback:
+  required: true
+  method: Revert the merge commit or restore the previous schema version from Git.
+  last_known_good: main before this change
+  tested: true
+
+promotion:
+  decision: promote
+  approval_reference: PR review and passing required checks
+  soak_result: not_required

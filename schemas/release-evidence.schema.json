@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/zebadee2kk/FrankensteinzHermes/schemas/release-evidence.schema.json",
+  "title": "FrankensteinzHermes Release Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "work_item",
+    "candidate",
+    "risk",
+    "summary",
+    "tests",
+    "reviews",
+    "baseline",
+    "rollback",
+    "promotion"
+  ],
+  "properties": {
+    "work_item": {"type": "string", "minLength": 1},
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit"],
+      "properties": {
+        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "artifact": {"type": ["string", "null"]},
+        "artifact_digest": {"type": ["string", "null"]}
+      }
+    },
+    "risk": {"enum": ["L0", "L1", "L2", "L3"]},
+    "summary": {"type": "string", "minLength": 1},
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "status"],
+        "properties": {
+          "name": {"type": "string"},
+          "status": {"enum": ["pass", "fail", "skipped"]},
+          "evidence": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "reviews": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["independent", "security", "qa"],
+      "properties": {
+        "independent": {"enum": ["pass", "fail", "not_required"]},
+        "security": {"enum": ["pass", "fail", "not_required"]},
+        "qa": {"enum": ["pass", "fail", "not_required"]}
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparison_required", "result"],
+      "properties": {
+        "comparison_required": {"type": "boolean"},
+        "result": {"enum": ["better", "equivalent", "worse", "not_applicable"]},
+        "evidence": {"type": ["string", "null"]}
+      }
+    },
+    "staging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {"enum": ["pass", "fail", "not_required"]},
+        "evidence": {"type": ["string", "null"]}
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "method"],
+      "properties": {
+        "required": {"type": "boolean"},
+        "method": {"type": "string", "minLength": 1},
+        "last_known_good": {"type": ["string", "null"]},
+        "tested": {"type": "boolean"}
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision"],
+      "properties": {
+        "decision": {"enum": ["promote", "hold", "reject", "rollback"]},
+        "approval_reference": {"type": ["string", "null"]},
+        "soak_result": {"enum": ["healthy", "unhealthy", "pending", "not_required"]}
+      }
+    }
+  }
+}
