@@ -27,7 +27,7 @@ def load_yaml(relative: str):
         fail(f"required file missing: {relative}")
     try:
         return yaml.safe_load(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # CI diagnostic
+    except Exception as exc:
         fail(f"invalid YAML in {relative}: {exc}")
 
 
@@ -46,21 +46,18 @@ def validate_backlog() -> None:
     items = data.get("items", [])
     if not items:
         fail("backlog contains no items")
-
     ids = [item.get("id") for item in items]
     if None in ids:
         fail("every backlog item must have an id")
     if len(ids) != len(set(ids)):
         fail("backlog item ids must be unique")
-
     known = set(ids)
     for item in items:
         for dep in item.get("depends_on", []):
             if dep not in known:
                 fail(f"{item['id']} depends on unknown item {dep}")
-        risk = item.get("risk")
-        if risk not in {"L0", "L1", "L2", "L3"}:
-            fail(f"{item['id']} has invalid risk class {risk!r}")
+        if item.get("risk") not in {"L0", "L1", "L2", "L3"}:
+            fail(f"{item['id']} has invalid risk class {item.get('risk')!r}")
 
 
 def validate_autonomy_policy() -> None:
@@ -89,21 +86,29 @@ def validate_model_policy() -> None:
 
 def validate_repository_protection() -> None:
     data = load_yaml("policy/repository-protection.yaml")
+    enforcement = data.get("enforcement", {})
+    if enforcement.get("mode") != "credential_boundary_and_ci":
+        fail("free-plan governance must use credential_boundary_and_ci")
     required = data.get("required", {})
-    if required.get("pull_request") is not True:
-        fail("main must require pull requests")
-    if required.get("direct_push") is not False:
-        fail("direct push to main must remain disabled in desired state")
-    if required.get("force_push") is not False:
-        fail("force push must remain disabled in desired state")
-    checks = set(required.get("required_status_checks", {}).get("contexts", []))
+    if required.get("pull_request_workflow") is not True:
+        fail("pull request workflow must remain required")
+    if required.get("automated_ci_before_promotion") is not True:
+        fail("CI before promotion must remain required")
+    if required.get("direct_push_by_autonomous_identity") is not False:
+        fail("autonomous identities must not directly push upstream main")
+    checks = set(required.get("required_status_checks", []))
     expected = {"governance", "secret-scan", "dependency-review"}
     if not expected.issubset(checks):
-        fail(f"repository protection missing required checks: {sorted(expected - checks)}")
+        fail(f"repository governance missing required checks: {sorted(expected - checks)}")
     engineering = data.get("engineering_identity", {})
-    for key in ("repository_admin", "ruleset_admin", "secret_admin"):
+    for key in ("repository_admin", "ruleset_admin", "secret_admin", "upstream_contents_write", "upstream_workflow_admin"):
         if engineering.get(key) is not False:
             fail(f"engineering identity must not have {key}")
+    if engineering.get("contribution_mode") != "fork_or_owner_mediated_branch":
+        fail("engineering contribution mode must preserve an upstream authority boundary")
+    promotion = data.get("promotion", {}).get("until_hard_upstream_protection_is_available", {})
+    if promotion.get("autonomous_agent_may_self_merge") is not False:
+        fail("autonomous agents must not self-merge upstream during free-plan governance")
 
 
 def validate_release_evidence() -> None:
@@ -112,7 +117,6 @@ def validate_release_evidence() -> None:
     expected = {"work_item", "candidate", "risk", "summary", "tests", "reviews", "baseline", "rollback", "promotion"}
     if not expected.issubset(required):
         fail(f"release evidence schema missing required fields: {sorted(expected - required)}")
-
     example = load_yaml("examples/release-evidence.example.yaml")
     missing = expected - set(example)
     if missing:
