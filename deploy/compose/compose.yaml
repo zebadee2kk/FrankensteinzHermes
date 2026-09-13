@@ -89,6 +89,33 @@ services:
     networks:
       - internal
 
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.100.1
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    env_file:
+      - ${FZH_LITELLM_ENV_FILE:-/etc/frankensteinzhermes/secrets/litellm.env}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    ports:
+      - "127.0.0.1:${FZH_LITELLM_PORT:-4000}:4000"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging: *default-logging
+    networks:
+      - model-egress
+
   prometheus:
     image: prom/prometheus:v3.14.0
     restart: unless-stopped
@@ -145,6 +172,8 @@ networks:
   internal:
     name: frankensteinzhermes-internal
     internal: true
+  model-egress:
+    name: frankensteinzhermes-model-egress
 
 volumes:
   postgres_data:
