@@ -11,10 +11,11 @@ items:
     risk: L2
     autonomy: human_gate
     acceptance:
-      - protected production branch/ruleset defined
-      - required CI checks identified
-      - ordinary engineering identity cannot disable governance
-      - governance bypass test recorded
+      - GitHub Free ruleset limitation explicitly documented and owner-accepted
+      - PR and CI promotion workflow defined
+      - autonomous engineering identity has no upstream content-write or admin authority
+      - constitutional changes remain owner-controlled
+      - preferred fork/work-repository contribution boundary documented
 
   - id: B002
     title: CI baseline
