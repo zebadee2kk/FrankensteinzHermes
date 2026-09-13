@@ -108,19 +108,28 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Create ephemeral LiteLLM master key file
+
+      - name: Create ephemeral gateway credentials
         shell: bash
         run: |
           set -euo pipefail
           env_file="$RUNNER_TEMP/litellm.env"
-          printf 'LITELLM_MASTER_KEY=%s\n' "sk-$(openssl rand -hex 32)" > "$env_file"
+          master_key="sk-$(openssl rand -hex 32)"
+          echo "::add-mask::$master_key"
+          printf 'LITELLM_MASTER_KEY=%s\n' "$master_key" > "$env_file"
+          # Deliberately invalid provider placeholder. CI validates local gateway
+          # registration/auth only and must not issue a provider completion.
+          printf 'OPENROUTER_API_KEY=%s\n' 'sk-or-ci-placeholder-no-provider-call' >> "$env_file"
           chmod 0600 "$env_file"
           echo "FZH_LITELLM_ENV_FILE=$env_file" >> "$GITHUB_ENV"
           echo "FZH_LITELLM_PORT=14000" >> "$GITHUB_ENV"
+          echo "FZH_CI_LITELLM_MASTER_KEY=$master_key" >> "$GITHUB_ENV"
+
       - name: Start loopback-only LiteLLM gateway
         shell: bash
         run: docker compose -f deploy/compose/compose.yaml up -d litellm
-      - name: Verify health and loopback binding
+
+      - name: Verify health, loopback binding, and authenticated free alias
         shell: bash
         run: |
           set -euo pipefail
@@ -137,8 +146,25 @@ jobs:
             docker compose -f deploy/compose/compose.yaml logs litellm
             exit 1
           fi
+
           published="$(docker compose -f deploy/compose/compose.yaml port litellm 4000)"
-          [[ "$published" == 127.0.0.1:* ]] || { echo "LiteLLM not loopback-only: $published" >&2; exit 1; }
+          [[ "$published" == 127.0.0.1:* ]] || {
+            echo "LiteLLM not loopback-only: $published" >&2
+            exit 1
+          }
+
+          models="$RUNNER_TEMP/litellm-models.json"
+          curl --fail --silent --max-time 5 \
+            -H "Authorization: Bearer $FZH_CI_LITELLM_MASTER_KEY" \
+            http://127.0.0.1:14000/v1/models > "$models"
+          python - "$models" <<'PY'
+          import json, sys
+          payload = json.load(open(sys.argv[1], encoding='utf-8'))
+          ids = {item.get('id') for item in payload.get('data', [])}
+          if 'fzh-free-auto' not in ids:
+              raise SystemExit(f"fzh-free-auto alias missing from authenticated model list: {sorted(ids)}")
+          PY
+
       - name: Tear down LiteLLM contract state
         if: always()
         shell: bash
