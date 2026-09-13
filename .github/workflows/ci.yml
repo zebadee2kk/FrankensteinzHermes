@@ -16,12 +16,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
 
@@ -61,7 +61,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out full history
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -91,7 +91,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Create ephemeral database secret and paths
         shell: bash
@@ -144,3 +144,61 @@ jobs:
         if: always()
         shell: bash
         run: docker compose -f deploy/compose/compose.yaml --profile restore-test down -v --remove-orphans
+
+  observability-contract:
+    name: observability-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create ephemeral textfile metrics directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          textfile_dir="$RUNNER_TEMP/fzh-textfile"
+          install -d -m 0755 "$textfile_dir"
+          cat > "$textfile_dir/frankensteinz.prom" <<'EOF'
+          # TYPE fzh_health_snapshot_timestamp_seconds gauge
+          fzh_health_snapshot_timestamp_seconds 1
+          EOF
+          echo "FZH_TEXTFILE_DIR=$textfile_dir" >> "$GITHUB_ENV"
+
+      - name: Validate Prometheus configuration and rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint=/bin/promtool \
+            -v "$PWD/deploy/compose/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.14.0 \
+            check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint=/bin/promtool \
+            -v "$PWD/deploy/compose/prometheus:/etc/prometheus:ro" \
+            prom/prometheus:v3.14.0 \
+            check rules /etc/prometheus/rules/seed-alerts.yml
+
+      - name: Start internal observability pair
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml up -d node-exporter prometheus
+
+      - name: Verify Prometheus scrapes node exporter and textfile metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            if docker compose -f deploy/compose/compose.yaml exec -T prometheus \
+              promtool query instant http://localhost:9090 'up{job="node"}' 2>/dev/null | grep -q '=> 1'; then
+              break
+            fi
+            sleep 1
+          done
+          docker compose -f deploy/compose/compose.yaml exec -T prometheus \
+            promtool query instant http://localhost:9090 'up{job="node"}' | grep -q '=> 1'
+          docker compose -f deploy/compose/compose.yaml exec -T prometheus \
+            promtool query instant http://localhost:9090 'fzh_health_snapshot_timestamp_seconds' | grep -q '=> 1'
+
+      - name: Tear down observability test state
+        if: always()
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml down -v --remove-orphans
