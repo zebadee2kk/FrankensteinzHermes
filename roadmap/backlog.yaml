@@ -7,24 +7,26 @@ items:
     title: Repository governance
     phase: 0
     priority: P0
-    depends_on: []
+    depends_on: [B002, B003]
     risk: L2
     autonomy: human_gate
     acceptance:
       - protected production branch/ruleset defined
       - required CI checks identified
       - ordinary engineering identity cannot disable governance
+      - governance bypass test recorded
 
   - id: B002
     title: CI baseline
     phase: 0
     priority: P0
-    depends_on: [B001]
+    depends_on: [B003]
     risk: L1
     acceptance:
       - lint/test workflow runs on PR
       - secret scan enabled
       - dependency/security checks have documented fail policy
+      - third-party actions pinned to immutable commits
 
   - id: B003
     title: Architecture constitution
@@ -56,7 +58,7 @@ items:
     title: Ubuntu seed-host bootstrap
     phase: 1
     priority: P0
-    depends_on: [B004]
+    depends_on: [B001, B004]
     risk: L2
     acceptance:
       - idempotent bootstrap on Ubuntu LTS
