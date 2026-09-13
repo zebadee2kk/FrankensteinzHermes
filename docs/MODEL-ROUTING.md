@@ -6,20 +6,51 @@ Use free remote inference wherever it is sufficiently capable and policy-compati
 
 The architecture must not depend on any specific free model remaining available indefinitely.
 
+## Seed OpenRouter route
+
+B022 introduces one stable internal model alias:
+
+```text
+fzh-free-auto
+    -> LiteLLM
+    -> openrouter/openrouter/free
+    -> OpenRouter openrouter/free
+```
+
+`fzh-free-auto` is the name Hermes/seed workers use. Provider/model implementation details remain behind the gateway.
+
+OpenRouter's free router is intentionally treated as **opportunistic capacity**, not a deterministic model identity. The system records the actual returned model when evaluating work, and later B026 can prefer benchmarked explicit free models by role.
+
+The OpenRouter API key exists only in the local LiteLLM secret environment. Hermes and normal workers receive a LiteLLM client credential, not the provider key.
+
 ## Routing order
 
-For an eligible task:
+For an eligible task as the system matures:
 
 ```text
 specific benchmarked free model
   -> alternate benchmarked free model
   -> alternate approved free provider
-  -> OpenRouter free router
+  -> fzh-free-auto / OpenRouter free router
   -> local Ollama model
   -> queue/retry
 ```
 
 Paid fallback is disabled by default. It may only be enabled by explicit owner budget policy.
+
+## Free-tier exhaustion
+
+Free-first does not mean infinite retry.
+
+The seed engineering/job layer must impose finite model-call, retry and wall-clock budgets. Rate limits, provider exhaustion or temporary free-model absence should produce a deferred/retryable job state rather than recursive retry storms.
+
+Until B024 local Ollama is available, exhaustion pauses/dequeues eligible work. After B024, low-risk compatible tasks may degrade to the approved local model. Paid routing remains disabled unless owner policy explicitly changes.
+
+## Current-free discovery
+
+`scripts/models/discover-openrouter-free.py` reads OpenRouter's model catalogue and reports models whose prompt and completion token prices are both zero.
+
+This output is **discovery input only**. It must not directly rewrite production routing. Candidate free models must pass privacy/policy eligibility and later evaluation before becoming explicit preferred routes.
 
 ## Task roles
 
@@ -66,14 +97,14 @@ Unknown privacy properties default to the more restrictive routing decision.
 
 ## Data classification
 
-Suggested initial classes:
+Initial classes:
 
 - **PUBLIC** — may use any approved provider.
 - **INTERNAL** — only providers approved for internal data.
 - **CONFIDENTIAL** — approved zero-retention/no-training provider or local processing.
 - **SECRET** — never intentionally sent to an LLM provider; handle through dedicated secret mechanisms.
 
-Provider price does not override data policy.
+Provider price does not override data policy. `fzh-free-auto` does not itself grant permission to route a classification remotely.
 
 ## Continuous free-model evaluation
 
@@ -125,7 +156,5 @@ Initial local workloads should favour inexpensive tasks such as:
 Only one heavy local model should be loaded at a time initially unless benchmarks demonstrate sufficient headroom.
 
 ## Resource/cost policy
-
-Free-first does not mean infinite retries.
 
 Each job has finite retry, time and model-call limits. If free capacity cannot complete a task inside its budget, the task should pause/queue or use an explicitly permitted fallback rather than spin indefinitely.
