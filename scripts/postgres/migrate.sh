@@ -52,10 +52,15 @@ for migration in "${migrations[@]}"; do
 
   version="${filename%.sql}"
   checksum="$(sha256sum "$migration" | awk '{print $1}')"
+  if [[ ! "$checksum" =~ ^[0-9a-f]{64}$ ]]; then
+    echo "invalid SHA-256 checksum generated for $filename" >&2
+    exit 1
+  fi
+
+  # version and checksum are safe to embed because both are strictly validated above.
   existing="$(compose exec -T postgres psql --quiet --tuples-only --no-align \
     --username="$DB_USER" --dbname="$DB_NAME" \
-    --set=version="$version" \
-    --command="SELECT checksum FROM fzh_meta.schema_migrations WHERE version = :'version';" | tr -d '[:space:]')"
+    --command="SELECT checksum FROM fzh_meta.schema_migrations WHERE version = '$version';" | tr -d '[:space:]')"
 
   if [[ -n "$existing" ]]; then
     if [[ "$existing" != "$checksum" ]]; then
@@ -70,10 +75,9 @@ for migration in "${migrations[@]}"; do
   {
     printf '%s\n' '\set ON_ERROR_STOP on' 'BEGIN;'
     cat "$migration"
-    printf "\nINSERT INTO fzh_meta.schema_migrations(version, checksum) VALUES (:'version', :'checksum');\n"
+    printf "\nINSERT INTO fzh_meta.schema_migrations(version, checksum) VALUES ('%s', '%s');\n" "$version" "$checksum"
     printf '%s\n' 'COMMIT;'
-  } | compose exec -T postgres psql --username="$DB_USER" --dbname="$DB_NAME" \
-      --set=version="$version" --set=checksum="$checksum"
+  } | compose exec -T postgres psql --username="$DB_USER" --dbname="$DB_NAME"
 done
 
 echo "database migrations are current"
