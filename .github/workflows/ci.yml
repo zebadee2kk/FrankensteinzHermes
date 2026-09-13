@@ -39,6 +39,10 @@ jobs:
             bash -n "$script"
           done < <(find bootstrap -type f -name '*.sh' -print0 2>/dev/null)
 
+      - name: Validate Compose runtime contract
+        shell: bash
+        run: bash scripts/compose/verify.sh
+
       - name: Validate architecture and machine-readable policy
         run: python scripts/validate_repo.py
 
