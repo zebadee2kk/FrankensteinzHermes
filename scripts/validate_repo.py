@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
-"""Validate machine-readable FrankensteinzHermes governance files.
-
-This is intentionally dependency-light. CI installs PyYAML before running it.
-"""
+"""Validate machine-readable FrankensteinzHermes governance files."""
 
 from __future__ import annotations
 
@@ -84,6 +81,29 @@ def validate_model_policy() -> None:
         fail("SECRET classification must not be remotely routed")
 
 
+def validate_hermes_pin() -> None:
+    data = load_yaml("config/hermes-upstream.yaml")
+    if data.get("version") != 1:
+        fail("Hermes upstream config must be version 1")
+    if data.get("repository") != "https://github.com/NousResearch/hermes-agent.git":
+        fail("Hermes upstream repository must remain explicit")
+    commit = data.get("commit", "")
+    if not SHA_PIN.fullmatch(str(commit)):
+        fail("Hermes upstream commit must be a 40-character SHA")
+    install = data.get("install", {})
+    if install.get("skip_setup") is not True:
+        fail("Hermes provisioning must skip interactive setup")
+    if install.get("skip_browser") is not True or install.get("skip_computer_use") is not True:
+        fail("Hermes core must not install browser/computer-use capabilities")
+    authority = data.get("runtime_authority", {})
+    for key in ("sudo", "docker_socket", "canonical_repo_write", "repository_admin", "security_policy_write"):
+        if authority.get(key) is not False:
+            fail(f"Hermes runtime authority must keep {key}=false")
+    upgrade = data.get("upgrade", {})
+    if upgrade.get("automatic") is not False:
+        fail("Hermes production upgrades must not track upstream automatically")
+
+
 def validate_repository_protection() -> None:
     data = load_yaml("policy/repository-protection.yaml")
     enforcement = data.get("enforcement", {})
@@ -159,6 +179,8 @@ def validate_required_docs() -> None:
         "docs/operations/RELEASE-EVIDENCE.md",
         "docs/operations/SEED-BOOTSTRAP.md",
         "docs/operations/OBSERVABILITY.md",
+        "docs/operations/RESOURCE-GOVERNOR.md",
+        "docs/operations/HERMES-CORE.md",
         "SECURITY.md",
     ]
     for relative in required:
@@ -172,6 +194,7 @@ def main() -> None:
     validate_backlog()
     validate_autonomy_policy()
     validate_model_policy()
+    validate_hermes_pin()
     validate_repository_protection()
     validate_release_evidence()
     validate_action_pins()
