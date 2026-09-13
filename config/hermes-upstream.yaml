@@ -1,0 +1,27 @@
+version: 1
+repository: https://github.com/NousResearch/hermes-agent.git
+raw_base: https://raw.githubusercontent.com/NousResearch/hermes-agent
+commit: 5dea46d13deec9549bdc2ea703ae9201d733c28d
+reviewed_at: 2026-09-13
+
+install:
+  user: fzh-hermes
+  home: /var/lib/frankensteinzhermes/hermes-user
+  hermes_home: /var/lib/frankensteinzhermes/hermes-user/.hermes
+  install_dir: /var/lib/frankensteinzhermes/hermes-user/hermes-agent
+  skip_setup: true
+  skip_browser: true
+  skip_computer_use: true
+
+runtime_authority:
+  sudo: false
+  docker_socket: false
+  canonical_repo_write: false
+  repository_admin: false
+  security_policy_write: false
+
+upgrade:
+  automatic: false
+  require_candidate_branch: true
+  require_ci: true
+  require_staging_or_shadow_evidence: true
