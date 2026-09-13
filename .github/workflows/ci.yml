@@ -186,15 +186,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          ok=false
           for _ in $(seq 1 60); do
             if docker compose -f deploy/compose/compose.yaml exec -T prometheus \
               promtool query instant http://localhost:9090 'up{job="node"}' 2>/dev/null | grep -q '=> 1'; then
+              ok=true
               break
             fi
             sleep 1
           done
-          docker compose -f deploy/compose/compose.yaml exec -T prometheus \
-            promtool query instant http://localhost:9090 'up{job="node"}' | grep -q '=> 1'
+          if [[ "$ok" != true ]]; then
+            docker compose -f deploy/compose/compose.yaml ps
+            docker compose -f deploy/compose/compose.yaml logs prometheus node-exporter
+            exit 1
+          fi
           docker compose -f deploy/compose/compose.yaml exec -T prometheus \
             promtool query instant http://localhost:9090 'fzh_health_snapshot_timestamp_seconds' | grep -q '=> 1'
 
