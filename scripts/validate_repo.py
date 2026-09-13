@@ -151,6 +151,7 @@ def validate_required_docs() -> None:
         "docs/ROADMAP.md",
         "docs/SEED-NODE.md",
         "docs/operations/REPOSITORY-GOVERNANCE.md",
+        "docs/operations/CI-SECURITY.md",
         "docs/operations/RELEASE-EVIDENCE.md",
         "SECURITY.md",
     ]
