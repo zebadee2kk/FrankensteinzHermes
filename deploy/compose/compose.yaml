@@ -1,5 +1,11 @@
 name: frankensteinzhermes
 
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   seed-canary:
     image: busybox:1.37.0
@@ -21,6 +27,7 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+    logging: *default-logging
     networks:
       - internal
 
@@ -49,6 +56,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    logging: *default-logging
     networks:
       - internal
 
@@ -62,9 +70,6 @@ services:
     volumes:
       - ${FZH_POSTGRES_PASSWORD_FILE:-/etc/frankensteinzhermes/secrets/postgres_password}:/run/secrets/postgres_password:ro
     tmpfs:
-      # PG18 creates its version-specific PGDATA beneath this parent. The parent
-      # must be writable during entrypoint initialization; PGDATA itself is
-      # subsequently restricted by PostgreSQL.
       - /var/lib/postgresql:size=1g,mode=1777
       - /tmp:size=64m,mode=1777
       - /var/run/postgresql:size=16m,mode=0775
@@ -80,6 +85,60 @@ services:
       timeout: 3s
       retries: 20
       start_period: 10s
+    logging: *default-logging
+    networks:
+      - internal
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=1GB
+      - --web.enable-lifecycle=false
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 0.75
+    logging: *default-logging
+    networks:
+      - internal
+
+  node-exporter:
+    image: prom/node-exporter:v1.12.1
+    restart: unless-stopped
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.textfile.directory=/textfile
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|var/lib/docker/.+|var/lib/containers/.+)($|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro,rslave
+      - ${FZH_TEXTFILE_DIR:-/var/lib/frankensteinzhermes/metrics/textfile}:/textfile:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 128m
+    cpus: 0.25
+    logging: *default-logging
     networks:
       - internal
 
@@ -91,3 +150,5 @@ networks:
 volumes:
   postgres_data:
     name: frankensteinzhermes-postgres-data
+  prometheus_data:
+    name: frankensteinzhermes-prometheus-data
