@@ -1,0 +1,10 @@
+# Default owner
+* @zebadee2kk
+
+# Constitutional/security-sensitive paths
+/docs/AUTONOMY-CONSTITUTION.md @zebadee2kk
+/docs/THREAT-MODEL.md @zebadee2kk
+/docs/adr/ @zebadee2kk
+/config/autonomy-policy.example.yaml @zebadee2kk
+/SECURITY.md @zebadee2kk
+/.github/ @zebadee2kk
