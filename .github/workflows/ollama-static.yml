@@ -1,0 +1,23 @@
+name: Ollama static contract
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ollama-static:
+    name: ollama-static
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate Ollama seed runtime invariants
+        run: python3 scripts/validate_ollama.py
+      - name: Validate verifier shell syntax
+        run: bash -n scripts/ollama/verify.sh
