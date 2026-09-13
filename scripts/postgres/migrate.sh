@@ -19,13 +19,13 @@ if [[ ! -d "$MIGRATIONS_DIR" ]]; then
   exit 1
 fi
 
-if ! compose exec -T postgres pg_isready --username="${FZH_POSTGRES_USER:-frankensteinz}" --dbname="${FZH_POSTGRES_DB:-frankensteinz}" >/dev/null 2>&1; then
+DB_USER="${FZH_POSTGRES_USER:-frankensteinz}"
+DB_NAME="${FZH_POSTGRES_DB:-frankensteinz}"
+
+if ! compose exec -T postgres pg_isready --username="$DB_USER" --dbname="$DB_NAME" >/dev/null 2>&1; then
   echo "postgres service is not ready" >&2
   exit 1
 fi
-
-DB_USER="${FZH_POSTGRES_USER:-frankensteinz}"
-DB_NAME="${FZH_POSTGRES_DB:-frankensteinz}"
 
 cat <<'SQL' | compose exec -T postgres psql --set=ON_ERROR_STOP=1 --username="$DB_USER" --dbname="$DB_NAME"
 CREATE SCHEMA IF NOT EXISTS fzh_meta;
@@ -70,7 +70,7 @@ for migration in "${migrations[@]}"; do
   {
     printf '%s\n' '\set ON_ERROR_STOP on' 'BEGIN;'
     cat "$migration"
-    printf '\nINSERT INTO fzh_meta.schema_migrations(version, checksum) VALUES (:''version'', :''checksum'');\n'
+    printf "\nINSERT INTO fzh_meta.schema_migrations(version, checksum) VALUES (:'version', :'checksum');\n"
     printf '%s\n' 'COMMIT;'
   } | compose exec -T postgres psql --username="$DB_USER" --dbname="$DB_NAME" \
       --set=version="$version" --set=checksum="$checksum"
