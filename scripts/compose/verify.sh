@@ -43,4 +43,19 @@ if ! grep -q 'healthcheck:' "$COMPOSE_FILE"; then
   exit 1
 fi
 
+if grep -q '/var/lib/postgresql/data' "$COMPOSE_FILE"; then
+  echo "PostgreSQL 18+ must persist /var/lib/postgresql, not the pre-18 /var/lib/postgresql/data path" >&2
+  exit 1
+fi
+
+if grep -Eq '^[[:space:]]+POSTGRES_PASSWORD:[[:space:]]' "$COMPOSE_FILE"; then
+  echo "Inline POSTGRES_PASSWORD is forbidden; use POSTGRES_PASSWORD_FILE" >&2
+  exit 1
+fi
+
+if grep -q 'image: postgres:' "$COMPOSE_FILE" && ! grep -q 'postgres_data:/var/lib/postgresql' "$COMPOSE_FILE"; then
+  echo "PostgreSQL service must mount its durable volume at /var/lib/postgresql" >&2
+  exit 1
+fi
+
 echo "Compose static verification passed"
