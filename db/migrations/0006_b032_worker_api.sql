@@ -8,6 +8,23 @@ $$;
 
 GRANT USAGE ON SCHEMA fzh TO fzh_b032_worker;
 
+-- PostgreSQL grants EXECUTE on newly created functions to PUBLIC by default.
+-- B031 predated worker capability roles, so explicitly close the generic mutation
+-- surface before exposing the narrow B032 SECURITY DEFINER wrappers below.
+-- The database owner retains owner rights; future runtime identities must receive
+-- only the capability functions appropriate to their stage.
+REVOKE ALL ON FUNCTION fzh.submit_job(text, text, jsonb, boolean, text, text, text, integer, integer, timestamptz, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.lease_next_job(text, integer, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.record_job_gate_decision(uuid, uuid, text, text, text, uuid, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.start_job(uuid, uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.heartbeat_job(uuid, uuid, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.begin_job_effect(uuid, uuid, text, jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.commit_job_effect(uuid, uuid, text, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.complete_job(uuid, uuid, jsonb, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.fail_job(uuid, uuid, text, text, boolean, integer, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.cancel_job(uuid, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.reap_expired_jobs(text) FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION fzh.b032_lease_job(
     p_worker_id text,
     p_lease_seconds integer DEFAULT 900
@@ -160,11 +177,11 @@ GRANT EXECUTE ON FUNCTION fzh.b032_commit_candidate_effect(uuid, uuid, text) TO 
 GRANT EXECUTE ON FUNCTION fzh.b032_complete_job(uuid, uuid, jsonb) TO fzh_b032_worker;
 GRANT EXECUTE ON FUNCTION fzh.b032_fail_job(uuid, uuid, text, text, boolean, integer) TO fzh_b032_worker;
 
--- The worker role receives no direct table privileges. All mutations are through
--- the fixed SECURITY DEFINER surface above.
+-- The worker role receives no direct table or sequence privileges. All mutation
+-- and lifecycle access is through the fixed SECURITY DEFINER surface above.
 REVOKE ALL ON ALL TABLES IN SCHEMA fzh FROM fzh_b032_worker;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA fzh FROM fzh_b032_worker;
 
 INSERT INTO fzh.system_metadata(key, value)
-VALUES ('b032_worker_api', '{"schema_version":1,"role":"fzh_b032_worker","direct_table_access":false,"job_kind":"engineering.implement"}'::jsonb)
+VALUES ('b032_worker_api', '{"schema_version":1,"role":"fzh_b032_worker","direct_table_access":false,"generic_function_access":false,"job_kind":"engineering.implement"}'::jsonb)
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
