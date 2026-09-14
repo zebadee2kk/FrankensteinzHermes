@@ -7,6 +7,8 @@ readonly LLMFIT_REPO="AlexsJones/llmfit"
 readonly LLMFIT_PLATFORM="x86_64-unknown-linux-gnu"
 readonly ASSET="llmfit-${LLMFIT_TAG}-${LLMFIT_PLATFORM}.tar.gz"
 readonly BASE_URL="https://github.com/${LLMFIT_REPO}/releases/download/${LLMFIT_TAG}"
+# GitHub release asset digest for release 386039909 / asset 554393199.
+readonly EXPECTED_ARCHIVE_SHA256="fe0d4987376fae21cc1461f72a348a93c88cfacd2aec4356c15ba30603dcc731"
 
 INSTALL_DIR="${1:-${FZH_LLMFIT_INSTALL_DIR:-$HOME/.local/lib/frankensteinzhermes/llmfit/${LLMFIT_VERSION}}}"
 
@@ -41,11 +43,13 @@ curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
 curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
   "${BASE_URL}/${ASSET}.sha256" -o "$checksum"
 
-# FrankensteinzHermes requires the upstream checksum sidecar. Missing or invalid
-# integrity metadata is a hard failure; we never silently skip verification.
+# Require both the publisher-provided sidecar and our reviewed immutable asset
+# digest. This makes an upstream-sidecar change visible instead of trusting two
+# files fetched from the same release location as the entire integrity model.
 (
   cd "$tmp_dir"
   sha256sum --check --strict "${ASSET}.sha256"
+  printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" "$ASSET" | sha256sum --check --strict -
 )
 
 tar -xzf "$archive" -C "$tmp_dir"
