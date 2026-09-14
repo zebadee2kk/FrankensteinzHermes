@@ -24,6 +24,20 @@ END;
 $$;
 REVOKE ALL ON FUNCTION fzh._b034_assert_qa_job(uuid) FROM PUBLIC;
 
+CREATE OR REPLACE FUNCTION fzh._b034_assert_profile_id(p_profile_id text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, fzh
+AS $$
+BEGIN
+    IF p_profile_id IS NULL OR p_profile_id !~ '^[A-Za-z0-9_.:-]{1,64}$' THEN
+        RAISE EXCEPTION 'invalid B034 QA profile id';
+    END IF;
+END;
+$$;
+REVOKE ALL ON FUNCTION fzh._b034_assert_profile_id(text) FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION fzh.b034_lease_job(p_worker_id text, p_lease_seconds integer DEFAULT 900)
 RETURNS TABLE (
     job_id uuid, attempt_id bigint, lease_token uuid, job_kind text, payload jsonb,
@@ -79,6 +93,51 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION fzh.b034_begin_profile_effect(
+    p_job_id uuid, p_lease_token uuid, p_profile_id text
+)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, fzh
+AS $$
+BEGIN
+    PERFORM fzh._b034_assert_qa_job(p_job_id);
+    PERFORM fzh._b034_assert_profile_id(p_profile_id);
+    RETURN fzh.begin_job_effect(
+        p_job_id,
+        p_lease_token,
+        'b034:qa-profile:' || p_job_id::text || ':' || p_profile_id,
+        jsonb_build_object('kind', 'sandboxed_qa_profile', 'profile_id', p_profile_id),
+        'b034-adversarial-qa'
+    );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION fzh.b034_commit_profile_effect(
+    p_job_id uuid, p_lease_token uuid, p_profile_id text, p_result_sha256 text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, fzh
+AS $$
+BEGIN
+    PERFORM fzh._b034_assert_qa_job(p_job_id);
+    PERFORM fzh._b034_assert_profile_id(p_profile_id);
+    IF p_result_sha256 IS NULL OR p_result_sha256 !~ '^[0-9a-f]{64}$' THEN
+        RAISE EXCEPTION 'invalid B034 QA result digest';
+    END IF;
+    RETURN fzh.commit_job_effect(
+        p_job_id,
+        p_lease_token,
+        'b034:qa-profile:' || p_job_id::text || ':' || p_profile_id,
+        p_result_sha256,
+        'b034-adversarial-qa'
+    );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION fzh.b034_complete_job(p_job_id uuid, p_lease_token uuid, p_result jsonb)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -121,6 +180,8 @@ REVOKE ALL ON FUNCTION fzh.b034_lease_job(text,integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fzh.b034_record_gate(uuid,uuid,text,text,text,uuid,text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fzh.b034_start_job(uuid,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fzh.b034_heartbeat(uuid,uuid,integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.b034_begin_profile_effect(uuid,uuid,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fzh.b034_commit_profile_effect(uuid,uuid,text,text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fzh.b034_complete_job(uuid,uuid,jsonb) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fzh.b034_fail_job(uuid,uuid,text,text,boolean,integer) FROM PUBLIC;
 
@@ -128,6 +189,8 @@ GRANT EXECUTE ON FUNCTION fzh.b034_lease_job(text,integer) TO fzh_b034_qa;
 GRANT EXECUTE ON FUNCTION fzh.b034_record_gate(uuid,uuid,text,text,text,uuid,text) TO fzh_b034_qa;
 GRANT EXECUTE ON FUNCTION fzh.b034_start_job(uuid,uuid) TO fzh_b034_qa;
 GRANT EXECUTE ON FUNCTION fzh.b034_heartbeat(uuid,uuid,integer) TO fzh_b034_qa;
+GRANT EXECUTE ON FUNCTION fzh.b034_begin_profile_effect(uuid,uuid,text) TO fzh_b034_qa;
+GRANT EXECUTE ON FUNCTION fzh.b034_commit_profile_effect(uuid,uuid,text,text) TO fzh_b034_qa;
 GRANT EXECUTE ON FUNCTION fzh.b034_complete_job(uuid,uuid,jsonb) TO fzh_b034_qa;
 GRANT EXECUTE ON FUNCTION fzh.b034_fail_job(uuid,uuid,text,text,boolean,integer) TO fzh_b034_qa;
 
@@ -135,5 +198,5 @@ REVOKE ALL ON ALL TABLES IN SCHEMA fzh FROM fzh_b034_qa;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA fzh FROM fzh_b034_qa;
 
 INSERT INTO fzh.system_metadata(key, value)
-VALUES ('b034_qa_api', '{"schema_version":1,"role":"fzh_b034_qa","direct_table_access":false,"generic_function_access":false,"candidate_ref_mutation":false,"job_kind":"engineering.qa"}'::jsonb)
+VALUES ('b034_qa_api', '{"schema_version":1,"role":"fzh_b034_qa","direct_table_access":false,"generic_function_access":false,"candidate_ref_mutation":false,"durable_profile_effects":true,"job_kind":"engineering.qa"}'::jsonb)
 ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now();
