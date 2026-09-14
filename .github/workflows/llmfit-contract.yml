@@ -1,0 +1,118 @@
+name: llmfit evidence contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/llmfit-contract.yml'
+      - '.gitignore'
+      - 'scripts/models/**'
+      - 'scripts/validate_llmfit.py'
+      - 'docs/operations/LLMFIT-BENCHMARK.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/llmfit-contract.yml'
+      - '.gitignore'
+      - 'scripts/models/**'
+      - 'scripts/validate_llmfit.py'
+      - 'docs/operations/LLMFIT-BENCHMARK.md'
+
+permissions:
+  contents: read
+
+jobs:
+  llmfit-contract:
+    name: llmfit-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate static llmfit invariants
+        run: python scripts/validate_llmfit.py
+
+      - name: Validate shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/models/install-llmfit.sh
+          bash -n scripts/models/capture-llmfit-evidence.sh
+
+      - name: Install pinned and checksummed llmfit release
+        shell: bash
+        run: |
+          set -euo pipefail
+          llmfit_bin="$(bash scripts/models/install-llmfit.sh "$RUNNER_TEMP/llmfit" | tail -n1)"
+          test -x "$llmfit_bin"
+          echo "FZH_CI_LLMFIT_BIN=$llmfit_bin" >> "$GITHUB_ENV"
+
+      - name: Generate synthetic 32 GB evidence bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$(
+            FZH_LLMFIT_BIN="$FZH_CI_LLMFIT_BIN" \
+            FZH_LLMFIT_EVIDENCE_ROOT="$RUNNER_TEMP/evidence" \
+            FZH_LLMFIT_EVIDENCE_TIMESTAMP='ci-synthetic' \
+            FZH_LLMFIT_RAM='32G' \
+            FZH_LLMFIT_CPU_CORES='8' \
+            FZH_LLMFIT_LIMIT='3' \
+            bash scripts/models/capture-llmfit-evidence.sh
+          )"
+          test -d "$bundle"
+          echo "FZH_CI_LLMFIT_BUNDLE=$bundle" >> "$GITHUB_ENV"
+
+      - name: Verify B026 handoff contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - "$FZH_CI_LLMFIT_BUNDLE" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          bundle = pathlib.Path(sys.argv[1])
+          report = json.loads((bundle / 'candidate-report.json').read_text(encoding='utf-8'))
+          manifest = json.loads((bundle / 'manifest.json').read_text(encoding='utf-8'))
+
+          assert report['schema_version'] == 1
+          assert report['synthetic_hardware_overrides'] is True
+          assert report['promotion_authorized'] is False
+          assert report['next_gate'] == 'B026 model evaluation registry'
+          assert '1.1.15' in report['llmfit_version_output']
+
+          for use_case in ('general', 'coding', 'reasoning'):
+              profile = report['profiles'][use_case]
+              assert profile['candidate_count'] >= 1
+              assert profile['candidates']
+              assert profile['source'] == f'recommend-{use_case}.json'
+
+          required = {
+              'system.json', 'llmfit-version.txt', 'doctor.txt', 'doctor.exit-code',
+              'recommend-general.json', 'recommend-coding.json', 'recommend-reasoning.json',
+          }
+          assert required <= set(manifest['files'])
+          assert manifest['synthetic_hardware_overrides'] is True
+
+          for name, metadata in manifest['files'].items():
+              path = bundle / name
+              assert path.stat().st_size == metadata['bytes']
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              assert digest == metadata['sha256']
+          PY
+
+      - name: Confirm no benchmark-sharing path was exercised
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -RIEq --binary-files=without-match \
+            'github_pat_|ghp_[A-Za-z0-9]|OPENROUTER_API_KEY|LITELLM_MASTER_KEY' \
+            "$FZH_CI_LLMFIT_BUNDLE"
