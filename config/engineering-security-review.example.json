@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "ledger": {
+    "adapter_command": ["python3", "scripts/engineering_security_reviewer/ledger_psql.py"],
+    "heartbeat_seconds": 900,
+    "retry_delay_seconds": 60
+  },
+  "model": {
+    "enabled": true,
+    "adapter_command": ["python3", "scripts/engineering_security_reviewer/litellm_adapter.py"],
+    "alias": "fzh-free-auto",
+    "max_calls": 1,
+    "max_prompt_bytes": 262144,
+    "max_output_tokens": 2048,
+    "max_response_bytes": 131072,
+    "timeout_seconds": 120
+  },
+  "budgets": {
+    "max_wall_seconds": 600,
+    "max_git_commands": 40,
+    "max_diff_bytes": 524288,
+    "max_evidence_bytes": 2097152,
+    "max_scanned_files": 64,
+    "max_scanned_bytes": 1048576
+  },
+  "policy": {
+    "medium_failure_threshold": 3,
+    "protected_path_prefixes": [
+      ".github/workflows/",
+      "db/migrations/",
+      "deploy/",
+      "scripts/security/",
+      "config/security/"
+    ],
+    "dependency_files": [
+      "requirements.txt",
+      "requirements.lock",
+      "pyproject.toml",
+      "poetry.lock",
+      "package.json",
+      "package-lock.json",
+      "pnpm-lock.yaml",
+      "yarn.lock",
+      "go.mod",
+      "go.sum",
+      "Cargo.toml",
+      "Cargo.lock"
+    ]
+  }
+}
