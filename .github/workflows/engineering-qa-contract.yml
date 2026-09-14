@@ -9,6 +9,7 @@ on:
       - 'config/qa-profiles.example.json'
       - 'db/migrations/0008_b034_qa_api.sql'
       - 'tests/test_engineering_qa.py'
+      - 'tests/test_engineering_qa_effects.py'
       - 'tests/sql/b034_qa_privilege_contract.sql'
       - 'tests/helpers/fake_engineering_qa_*'
       - 'docs/operations/ENGINEERING-QA.md'
@@ -22,6 +23,7 @@ on:
       - 'config/qa-profiles.example.json'
       - 'db/migrations/0008_b034_qa_api.sql'
       - 'tests/test_engineering_qa.py'
+      - 'tests/test_engineering_qa_effects.py'
       - 'tests/sql/b034_qa_privilege_contract.sql'
       - 'tests/helpers/fake_engineering_qa_*'
       - 'docs/operations/ENGINEERING-QA.md'
@@ -45,7 +47,7 @@ jobs:
           python-version: '3.12'
 
       - name: Compile QA and contract sources
-        run: python -m compileall -q scripts/engineering_qa scripts/validate_engineering_qa.py tests/test_engineering_qa.py tests/helpers
+        run: python -m compileall -q scripts/engineering_qa scripts/validate_engineering_qa.py tests/test_engineering_qa.py tests/test_engineering_qa_effects.py tests/helpers
 
       - name: Validate shell helper syntax
         run: bash -n scripts/engineering_qa/install_sandbox.sh
@@ -53,8 +55,8 @@ jobs:
       - name: Validate static QA authority invariants
         run: python scripts/validate_engineering_qa.py
 
-      - name: Run adversarial QA coordinator tests
-        run: python -m unittest -v tests.test_engineering_qa
+      - name: Run adversarial QA coordinator and effect tests
+        run: python -m unittest -v tests.test_engineering_qa tests.test_engineering_qa_effects
 
       - name: Create ephemeral PostgreSQL secret
         shell: bash
@@ -99,6 +101,11 @@ jobs:
           if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
             --command="SET ROLE fzh_b034_qa; SELECT * FROM fzh.lease_next_job('bypass',300,'engineering.qa');"; then
             echo 'B034 QA unexpectedly executed generic lease_next_job' >&2
+            exit 1
+          fi
+          if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            --command="SET ROLE fzh_b034_qa; SELECT fzh.begin_job_effect('11111111-1111-4111-8111-111111111111'::uuid,'22222222-2222-4222-8222-222222222222'::uuid,'bypass','{}'::jsonb,'bypass');"; then
+            echo 'B034 QA unexpectedly executed generic begin_job_effect' >&2
             exit 1
           fi
           if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
