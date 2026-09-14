@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "python-unit": {
+      "command": ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"],
+      "timeout_seconds": 180,
+      "memory_max": "768M",
+      "tasks_max": 96,
+      "cpu_quota": "150%",
+      "max_output_bytes": 1048576
+    },
+    "repo-governance": {
+      "command": ["python3", "scripts/validate_repo.py"],
+      "timeout_seconds": 120,
+      "memory_max": "512M",
+      "tasks_max": 64,
+      "cpu_quota": "100%",
+      "max_output_bytes": 524288
+    }
+  }
+}
