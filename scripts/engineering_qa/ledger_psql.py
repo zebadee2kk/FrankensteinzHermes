@@ -10,6 +10,7 @@ import sys
 import uuid
 
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+SAFE_PROFILE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 MAX_INPUT = 128 * 1024
 MAX_OUTPUT = 128 * 1024
 
@@ -30,7 +31,7 @@ def validate(value: object) -> dict:
     if not isinstance(value, dict):
         raise ValueError("request must be object")
     op = value.get("operation")
-    if op not in {"record_gate", "start", "heartbeat", "complete", "fail"}:
+    if op not in {"record_gate", "start", "heartbeat", "begin_effect", "commit_effect", "complete", "fail"}:
         raise ValueError("unsupported operation")
     valid_uuid(value.get("job_id"), "job_id")
     valid_uuid(value.get("lease_token"), "lease_token")
@@ -47,10 +48,20 @@ def validate(value: object) -> dict:
         seconds = value.get("lease_seconds", 900)
         if not isinstance(seconds, int) or not 15 <= seconds <= 3600:
             raise ValueError("invalid lease_seconds")
+    elif op in {"begin_effect", "commit_effect"}:
+        profile_id = value.get("profile_id")
+        if not isinstance(profile_id, str) or not SAFE_PROFILE.fullmatch(profile_id):
+            raise ValueError("invalid profile_id")
+        if op == "commit_effect":
+            digest = value.get("result_sha256")
+            if not isinstance(digest, str) or not HEX64.fullmatch(digest):
+                raise ValueError("invalid result_sha256")
     elif op == "complete":
         result = value.get("result")
         if not isinstance(result, dict) or result.get("qa_status") not in {"qa_passed", "qa_failed", "reject"}:
             raise ValueError("invalid QA completion result")
+        if result.get("promotion_authorized") not in (None, False):
+            raise ValueError("B034 cannot authorize promotion")
     elif op == "fail":
         if not isinstance(value.get("error_code"), str) or not value["error_code"] or len(value["error_code"]) > 128:
             raise ValueError("invalid error_code")
@@ -70,6 +81,8 @@ def sql_for(op: str) -> str:
         "record_gate": "SELECT json_build_object('status', fzh.b034_record_gate((j->>'job_id')::uuid,(j->>'lease_token')::uuid,j->>'decision',j->>'request_sha256',j->>'policy_sha256',(j->>'audit_event_id')::uuid,j->>'reason')) FROM r;",
         "start": "SELECT json_build_object('status', CASE WHEN fzh.b034_start_job((j->>'job_id')::uuid,(j->>'lease_token')::uuid) THEN 'running' ELSE 'error' END) FROM r;",
         "heartbeat": "SELECT json_build_object('lease_expires_at', fzh.b034_heartbeat((j->>'job_id')::uuid,(j->>'lease_token')::uuid,COALESCE((j->>'lease_seconds')::integer,900))) FROM r;",
+        "begin_effect": "SELECT json_build_object('state', fzh.b034_begin_profile_effect((j->>'job_id')::uuid,(j->>'lease_token')::uuid,j->>'profile_id')) FROM r;",
+        "commit_effect": "SELECT json_build_object('committed', fzh.b034_commit_profile_effect((j->>'job_id')::uuid,(j->>'lease_token')::uuid,j->>'profile_id',j->>'result_sha256')) FROM r;",
         "complete": "SELECT json_build_object('status', CASE WHEN fzh.b034_complete_job((j->>'job_id')::uuid,(j->>'lease_token')::uuid,j->'result') THEN 'succeeded' ELSE 'error' END) FROM r;",
         "fail": "SELECT json_build_object('status', fzh.b034_fail_job((j->>'job_id')::uuid,(j->>'lease_token')::uuid,j->>'error_code',j->>'error_summary',COALESCE((j->>'retryable')::boolean,true),COALESCE((j->>'retry_delay_seconds')::integer,60))) FROM r;",
     }
