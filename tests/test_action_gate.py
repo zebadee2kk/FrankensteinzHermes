@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import pathlib
+import sys
 import tempfile
 import unittest
 
@@ -9,8 +10,9 @@ MODULE_PATH = ROOT / "scripts/action_gate/action_gate.py"
 POLICY_PATH = ROOT / "policy/action-gate.json"
 
 spec = importlib.util.spec_from_file_location("fzh_action_gate", MODULE_PATH)
-gate = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
+gate = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = gate
 spec.loader.exec_module(gate)
 
 
