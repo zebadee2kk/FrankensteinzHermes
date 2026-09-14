@@ -42,6 +42,29 @@ CREATE TABLE IF NOT EXISTS fzh.model_candidates (
 COMMENT ON TABLE fzh.model_candidates IS
 'Candidate promotion boundary. Discovery or evaluation alone never changes status to approved.';
 
+CREATE TABLE IF NOT EXISTS fzh.model_candidate_evidence (
+    evidence_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    source_system text NOT NULL,
+    source_version text NOT NULL,
+    use_case text NOT NULL,
+    source_candidate_name text NOT NULL,
+    hardware_fingerprint text,
+    synthetic boolean NOT NULL DEFAULT false,
+    linked_candidate_key text REFERENCES fzh.model_candidates(candidate_key) ON DELETE SET NULL,
+    evidence_ref text NOT NULL,
+    evidence_sha256 text NOT NULL CHECK (evidence_sha256 ~ '^[0-9a-f]{64}$'),
+    source_payload jsonb NOT NULL,
+    observed_at timestamptz NOT NULL,
+    imported_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (source_system, evidence_sha256, use_case, source_candidate_name)
+);
+
+COMMENT ON TABLE fzh.model_candidate_evidence IS
+'Discovery/fit evidence inbox. Rows do not create, approve or enable model candidates.';
+
+CREATE INDEX IF NOT EXISTS model_candidate_evidence_lookup_idx
+    ON fzh.model_candidate_evidence(source_system, source_candidate_name, observed_at DESC);
+
 CREATE TABLE IF NOT EXISTS fzh.model_evaluations (
     evaluation_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     candidate_key text NOT NULL REFERENCES fzh.model_candidates(candidate_key) ON DELETE CASCADE,
