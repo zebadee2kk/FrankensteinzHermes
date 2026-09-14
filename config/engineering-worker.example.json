@@ -4,12 +4,15 @@
     "adapter_command": ["python3", "scripts/engineering_worker/litellm_adapter.py"],
     "alias": "fzh-free-auto",
     "max_calls": 2,
+    "max_context_bytes": 131072,
+    "max_prompt_bytes": 196608,
+    "max_output_tokens": 4096,
     "max_response_bytes": 262144,
     "timeout_seconds": 120
   },
   "budgets": {
     "max_wall_seconds": 600,
-    "max_tool_commands": 20,
+    "max_tool_commands": 24,
     "max_changed_files": 20,
     "max_changed_bytes": 262144
   },
