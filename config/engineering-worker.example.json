@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "model": {
+    "adapter_command": ["python3", "scripts/engineering_worker/litellm_adapter.py"],
+    "alias": "fzh-free-auto",
+    "max_calls": 2,
+    "max_response_bytes": 262144,
+    "timeout_seconds": 120
+  },
+  "budgets": {
+    "max_wall_seconds": 600,
+    "max_tool_commands": 20,
+    "max_changed_files": 20,
+    "max_changed_bytes": 262144
+  },
+  "test_allowlist": {
+    "python-unit": ["python3", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "repo-governance": ["python3", "scripts/validate_repo.py"]
+  },
+  "forbidden_path_prefixes": [
+    ".git/",
+    ".github/",
+    "policy/",
+    "scripts/action_gate/",
+    "bootstrap/"
+  ],
+  "forbidden_paths": [
+    "docs/AUTONOMY-CONSTITUTION.md",
+    "docs/ARCHITECTURE.md",
+    "docs/THREAT-MODEL.md",
+    "config/autonomy-policy.example.yaml"
+  ]
+}
