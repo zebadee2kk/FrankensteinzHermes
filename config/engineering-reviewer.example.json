@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "ledger": {
+    "adapter_command": ["python3", "scripts/engineering_reviewer/ledger_psql.py"],
+    "heartbeat_seconds": 900,
+    "retry_delay_seconds": 60
+  },
+  "model": {
+    "adapter_command": ["python3", "scripts/engineering_reviewer/litellm_adapter.py"],
+    "alias": "fzh-free-auto",
+    "max_calls": 1,
+    "max_prompt_bytes": 524288,
+    "max_output_tokens": 4096,
+    "max_response_bytes": 262144,
+    "timeout_seconds": 120,
+    "max_findings": 40
+  },
+  "budgets": {
+    "max_wall_seconds": 600,
+    "max_git_commands": 30,
+    "max_diff_bytes": 262144,
+    "max_context_bytes": 131072
+  },
+  "verdict_policy": {
+    "medium_findings_require_changes": 1
+  },
+  "forbidden_path_prefixes": [
+    ".github/",
+    "policy/",
+    "scripts/action_gate/",
+    "bootstrap/"
+  ],
+  "forbidden_paths": [
+    "docs/AUTONOMY-CONSTITUTION.md",
+    "docs/ARCHITECTURE.md",
+    "docs/THREAT-MODEL.md",
+    "config/autonomy-policy.example.yaml"
+  ]
+}

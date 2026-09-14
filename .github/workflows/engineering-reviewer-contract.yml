@@ -1,0 +1,124 @@
+name: engineering reviewer contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/engineering_reviewer/**'
+      - 'scripts/validate_engineering_reviewer.py'
+      - 'config/engineering-reviewer.example.json'
+      - 'db/migrations/0007_b033_reviewer_api.sql'
+      - 'tests/test_engineering_reviewer.py'
+      - 'tests/sql/b033_reviewer_privilege_contract.sql'
+      - 'tests/helpers/fake_engineering_reviewer.py'
+      - 'tests/helpers/fake_engineering_review_ledger.py'
+      - 'docs/operations/ENGINEERING-REVIEWER.md'
+      - '.github/workflows/engineering-reviewer-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/engineering_reviewer/**'
+      - 'scripts/validate_engineering_reviewer.py'
+      - 'config/engineering-reviewer.example.json'
+      - 'db/migrations/0007_b033_reviewer_api.sql'
+      - 'tests/test_engineering_reviewer.py'
+      - 'tests/sql/b033_reviewer_privilege_contract.sql'
+      - 'tests/helpers/fake_engineering_reviewer.py'
+      - 'tests/helpers/fake_engineering_review_ledger.py'
+      - 'docs/operations/ENGINEERING-REVIEWER.md'
+      - '.github/workflows/engineering-reviewer-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  engineering-reviewer-contract:
+    name: engineering-reviewer-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Compile reviewer and contract sources
+        run: python -m compileall -q scripts/engineering_reviewer scripts/validate_engineering_reviewer.py tests/test_engineering_reviewer.py tests/helpers
+
+      - name: Validate static reviewer authority invariants
+        run: python scripts/validate_engineering_reviewer.py
+
+      - name: Run independent reviewer adversarial tests
+        run: python -m unittest -v tests.test_engineering_reviewer
+
+      - name: Create ephemeral PostgreSQL secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_file="$RUNNER_TEMP/fzh-secrets/postgres_password"
+          install -d -m 0700 "$(dirname "$secret_file")"
+          openssl rand -base64 36 > "$secret_file"
+          chmod 0600 "$secret_file"
+          echo "FZH_POSTGRES_PASSWORD_FILE=$secret_file" >> "$GITHUB_ENV"
+
+      - name: Start PostgreSQL and apply migrations twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f deploy/compose/compose.yaml)
+          "${compose[@]}" up -d postgres
+          ready=0
+          for _ in $(seq 1 60); do
+            if "${compose[@]}" exec -T postgres pg_isready --username=frankensteinz --dbname=frankensteinz >/dev/null 2>&1; then
+              ready=$((ready + 1))
+              if [[ "$ready" -ge 2 ]]; then break; fi
+            else
+              ready=0
+            fi
+            sleep 1
+          done
+          [[ "$ready" -ge 2 ]]
+          bash scripts/postgres/migrate.sh
+          bash scripts/postgres/migrate.sh
+
+      - name: Prove B033 cannot bypass review capability API
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f deploy/compose/compose.yaml)
+          if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            --command="SET ROLE fzh_b033_reviewer; SELECT count(*) FROM fzh.jobs;"; then
+            echo 'B033 reviewer unexpectedly read fzh.jobs directly' >&2
+            exit 1
+          fi
+          if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            --command="SET ROLE fzh_b033_reviewer; SELECT * FROM fzh.lease_next_job('bypass',300,'engineering.review');"; then
+            echo 'B033 reviewer unexpectedly executed generic lease_next_job' >&2
+            exit 1
+          fi
+          if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            --command="SET ROLE fzh_b033_reviewer; SELECT fzh.b032_begin_candidate_effect('11111111-1111-4111-8111-111111111111'::uuid,'22222222-2222-4222-8222-222222222222'::uuid);"; then
+            echo 'B033 reviewer unexpectedly executed B032 candidate-effect capability' >&2
+            exit 1
+          fi
+
+      - name: Exercise scoped B033 review lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            < tests/sql/b033_reviewer_privilege_contract.sql
+
+      - name: Confirm contract never contacted a provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -z "${FZH_LITELLM_API_KEY:-}" ]]
+
+      - name: Tear down reviewer contract state
+        if: always()
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml down -v --remove-orphans
