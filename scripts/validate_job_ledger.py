@@ -3,7 +3,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 migration = (ROOT / "db/migrations/0003_job_ledger.sql").read_text(encoding="utf-8")
-hardening = (ROOT / "db/migrations/0004_job_ledger_budget_accounting.sql").read_text(encoding="utf-8")
+budget = (ROOT / "db/migrations/0004_job_ledger_budget_accounting.sql").read_text(encoding="utf-8")
+reaper = (ROOT / "db/migrations/0005_job_ledger_reaper_hardening.sql").read_text(encoding="utf-8")
 contract = ROOT / "tests/sql/job_ledger_contract.sql"
 runbook = ROOT / "docs/operations/JOB-LEDGER.md"
 cli = ROOT / "scripts/jobs/ledger.sh"
@@ -32,8 +33,17 @@ for fragment in (
     "retry_budget_refunded",
     "GREATEST(attempt_count - 1, 0)",
 ):
-    if fragment not in hardening:
+    if fragment not in budget:
         raise SystemExit(f"job ledger budget hardening missing invariant: {fragment}")
+
+for fragment in (
+    "a.job_id = v_job.job_id",
+    "e.job_id = v_job.job_id",
+    "v_job.lease_expires_at <= now()",
+    "job does not hold a live supplied lease",
+):
+    if fragment not in reaper:
+        raise SystemExit(f"job ledger reaper hardening missing invariant: {fragment}")
 
 for path in (contract, runbook, cli):
     if not path.exists():
