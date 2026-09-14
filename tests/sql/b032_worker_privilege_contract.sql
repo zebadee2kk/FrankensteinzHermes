@@ -26,7 +26,8 @@ BEGIN
     END IF;
 
     IF has_function_privilege('fzh_b032_worker', 'fzh.lease_next_job(text,integer,text)', 'EXECUTE')
-       OR has_function_privilege('fzh_b032_worker', 'fzh.complete_job(uuid,uuid,jsonb,text)', 'EXECUTE') THEN
+       OR has_function_privilege('fzh_b032_worker', 'fzh.complete_job(uuid,uuid,jsonb,text)', 'EXECUTE')
+       OR has_function_privilege('fzh_b032_worker', 'fzh.submit_job(text,text,jsonb,boolean,text,text,text,integer,integer,timestamptz,text)', 'EXECUTE') THEN
         RAISE EXCEPTION 'B032 worker unexpectedly has generic ledger function access';
     END IF;
 END;
@@ -78,37 +79,23 @@ SELECT fzh.b032_complete_job(
 
 RESET ROLE;
 
-DO $$
-DECLARE
-    v_status text;
-    v_gate_count integer;
-    v_effect_status text;
-BEGIN
-    SELECT status INTO v_status
-    FROM fzh.jobs
-    WHERE job_kind = 'engineering.implement'
-      AND idempotency_key = 'b032-privilege-contract';
-    IF v_status <> 'succeeded' THEN
-        RAISE EXCEPTION 'B032 scoped lifecycle did not succeed: %', v_status;
-    END IF;
+SELECT CASE
+    WHEN (SELECT status FROM fzh.jobs WHERE job_id = :'job_id'::uuid) = 'succeeded'
+    THEN 1 ELSE 1 / 0 END AS succeeded_assertion;
 
-    SELECT count(*) INTO v_gate_count
-    FROM fzh.job_gate_decisions
-    WHERE job_id = :'job_id'::uuid
-      AND audit_event_id = '55555555-5555-4555-8555-555555555555'::uuid
-      AND decision = 'allow';
-    IF v_gate_count <> 1 THEN
-        RAISE EXCEPTION 'expected exactly one persisted B030 gate decision';
-    END IF;
+SELECT CASE
+    WHEN (SELECT count(*)
+          FROM fzh.job_gate_decisions
+          WHERE job_id = :'job_id'::uuid
+            AND audit_event_id = '55555555-5555-4555-8555-555555555555'::uuid
+            AND decision = 'allow') = 1
+    THEN 1 ELSE 1 / 0 END AS gate_assertion;
 
-    SELECT status INTO v_effect_status
-    FROM fzh.job_effects
-    WHERE job_id = :'job_id'::uuid
-      AND effect_key = 'b032:candidate-commit:' || :'job_id';
-    IF v_effect_status <> 'committed' THEN
-        RAISE EXCEPTION 'candidate commit effect not committed: %', v_effect_status;
-    END IF;
-END;
-$$;
+SELECT CASE
+    WHEN (SELECT state
+          FROM fzh.job_effects
+          WHERE job_id = :'job_id'::uuid
+            AND effect_key = 'b032:candidate-commit:' || :'job_id') = 'committed'
+    THEN 1 ELSE 1 / 0 END AS effect_assertion;
 
 SELECT 'B032 worker privilege contract passed' AS result;
