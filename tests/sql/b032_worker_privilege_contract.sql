@@ -79,23 +79,40 @@ SELECT fzh.b032_complete_job(
 
 RESET ROLE;
 
-SELECT CASE
-    WHEN (SELECT status FROM fzh.jobs WHERE job_id = :'job_id'::uuid) = 'succeeded'
-    THEN 1 ELSE 1 / 0 END AS succeeded_assertion;
+CREATE TEMP TABLE b032_contract_context(job_id uuid PRIMARY KEY);
+INSERT INTO b032_contract_context(job_id) VALUES (:'job_id'::uuid);
 
-SELECT CASE
-    WHEN (SELECT count(*)
-          FROM fzh.job_gate_decisions
-          WHERE job_id = :'job_id'::uuid
-            AND audit_event_id = '55555555-5555-4555-8555-555555555555'::uuid
-            AND decision = 'allow') = 1
-    THEN 1 ELSE 1 / 0 END AS gate_assertion;
+DO $$
+DECLARE
+    v_job_id uuid;
+    v_status text;
+    v_gate_count integer;
+    v_effect_state text;
+BEGIN
+    SELECT job_id INTO v_job_id FROM b032_contract_context;
 
-SELECT CASE
-    WHEN (SELECT state
-          FROM fzh.job_effects
-          WHERE job_id = :'job_id'::uuid
-            AND effect_key = 'b032:candidate-commit:' || :'job_id') = 'committed'
-    THEN 1 ELSE 1 / 0 END AS effect_assertion;
+    SELECT status INTO v_status FROM fzh.jobs WHERE job_id = v_job_id;
+    IF v_status <> 'succeeded' THEN
+        RAISE EXCEPTION 'B032 scoped lifecycle did not succeed: %', v_status;
+    END IF;
+
+    SELECT count(*) INTO v_gate_count
+    FROM fzh.job_gate_decisions
+    WHERE job_id = v_job_id
+      AND audit_event_id = '55555555-5555-4555-8555-555555555555'::uuid
+      AND decision = 'allow';
+    IF v_gate_count <> 1 THEN
+        RAISE EXCEPTION 'expected exactly one persisted B030 gate decision, found %', v_gate_count;
+    END IF;
+
+    SELECT state INTO v_effect_state
+    FROM fzh.job_effects
+    WHERE job_id = v_job_id
+      AND effect_key = 'b032:candidate-commit:' || v_job_id::text;
+    IF v_effect_state <> 'committed' THEN
+        RAISE EXCEPTION 'candidate commit effect not committed: %', v_effect_state;
+    END IF;
+END;
+$$;
 
 SELECT 'B032 worker privilege contract passed' AS result;
