@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import datetime as dt
 import grp
 import json
 import os
 import signal
 import socket
 import sys
+import uuid
 from pathlib import Path
 
 from action_gate import GateError, decide, load_policy
@@ -19,9 +21,11 @@ CLIENT_GROUP = 'fzh-gate-clients'
 MAX_REQUEST_BYTES = 65536
 
 
-def audit(decision: dict) -> None:
+def audit(decision: dict) -> dict:
     record = dict(decision)
     record['event'] = 'action_gate_decision'
+    record['event_id'] = str(uuid.uuid4())
+    record['observed_at_utc'] = dt.datetime.now(dt.timezone.utc).isoformat()
     payload = json.dumps(record, sort_keys=True, separators=(',', ':')) + '\n'
     fd = os.open(AUDIT_PATH, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o640)
     try:
@@ -30,6 +34,7 @@ def audit(decision: dict) -> None:
     finally:
         os.close(fd)
     print(payload, end='', flush=True)
+    return record
 
 
 def recv_request(conn: socket.socket) -> object:
@@ -96,8 +101,8 @@ def main() -> int:
                         kill_switch_active=KILL_SWITCH_PATH.exists(),
                     )
                     result['reason'] = f'fail_closed:transport:{exc.__class__.__name__}'
-                audit(result)
-                conn.sendall((json.dumps(result, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
+                audited = audit(result)
+                conn.sendall((json.dumps(audited, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8'))
     finally:
         server.close()
         try:
