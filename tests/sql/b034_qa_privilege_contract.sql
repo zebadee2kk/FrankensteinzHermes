@@ -106,7 +106,7 @@ DECLARE
     v_qa_status text;
     v_neighbor_bad integer;
     v_gate_count integer;
-    v_effect_status text;
+    v_effect_state text;
     v_effect_receipt text;
 BEGIN
     SELECT job_id INTO v_job_id FROM b034_contract_context;
@@ -132,12 +132,12 @@ BEGIN
         RAISE EXCEPTION 'expected exactly one persisted B030 gate decision';
     END IF;
 
-    SELECT status, external_receipt INTO v_effect_status, v_effect_receipt
+    SELECT state, external_receipt INTO v_effect_state, v_effect_receipt
     FROM fzh.job_effects
     WHERE job_id = v_job_id
       AND effect_key = 'b034:qa-profile:' || v_job_id::text || ':python-unit';
-    IF v_effect_status <> 'committed' OR v_effect_receipt <> repeat('c', 64) THEN
-        RAISE EXCEPTION 'B034 QA effect invalid: status=%, receipt=%', v_effect_status, v_effect_receipt;
+    IF v_effect_state <> 'committed' OR v_effect_receipt <> repeat('c', 64) THEN
+        RAISE EXCEPTION 'B034 QA effect invalid: state=%, receipt=%', v_effect_state, v_effect_receipt;
     END IF;
 END;
 $$;
