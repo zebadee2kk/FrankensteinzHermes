@@ -1,0 +1,148 @@
+name: job ledger contract
+
+on:
+  pull_request:
+    paths:
+      - 'db/migrations/0003_job_ledger.sql'
+      - 'db/migrations/0004_job_ledger_budget_accounting.sql'
+      - 'db/migrations/0005_job_ledger_reaper_hardening.sql'
+      - 'tests/sql/job_ledger_contract.sql'
+      - 'scripts/jobs/**'
+      - 'scripts/validate_job_ledger.py'
+      - 'docs/operations/JOB-LEDGER.md'
+      - '.github/workflows/job-ledger-contract.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'db/migrations/0003_job_ledger.sql'
+      - 'db/migrations/0004_job_ledger_budget_accounting.sql'
+      - 'db/migrations/0005_job_ledger_reaper_hardening.sql'
+      - 'tests/sql/job_ledger_contract.sql'
+      - 'scripts/jobs/**'
+      - 'scripts/validate_job_ledger.py'
+      - 'docs/operations/JOB-LEDGER.md'
+      - '.github/workflows/job-ledger-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  job-ledger-contract:
+    name: job-ledger-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate static ledger invariants
+        run: python scripts/validate_job_ledger.py
+
+      - name: Validate operator shell syntax
+        shell: bash
+        run: bash -n scripts/jobs/ledger.sh
+
+      - name: Create ephemeral PostgreSQL secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_file="$RUNNER_TEMP/fzh-secrets/postgres_password"
+          install -d -m 0700 "$(dirname "$secret_file")"
+          openssl rand -base64 36 > "$secret_file"
+          chmod 0600 "$secret_file"
+          echo "FZH_POSTGRES_PASSWORD_FILE=$secret_file" >> "$GITHUB_ENV"
+
+      - name: Start PostgreSQL and apply migrations twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml up -d postgres
+          for _ in $(seq 1 60); do
+            if docker compose -f deploy/compose/compose.yaml exec -T postgres \
+              pg_isready --username=frankensteinz --dbname=frankensteinz >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            pg_isready --username=frankensteinz --dbname=frankensteinz
+          bash scripts/postgres/migrate.sh
+          bash scripts/postgres/migrate.sh
+
+      - name: Exercise ledger state machine and ambiguity handling
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            < tests/sql/job_ledger_contract.sql
+
+      - name: Prove two workers cannot acquire the same job
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f deploy/compose/compose.yaml)
+          "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --quiet \
+            --username=frankensteinz --dbname=frankensteinz <<'SQL'
+          SELECT fzh.submit_job(
+            'test.concurrent', 'single-job', '{}'::jsonb, false,
+            'L0', 'read_status', 'PUBLIC', 2, 1, now(), 'contract-race'
+          );
+          SQL
+
+          out_a="$RUNNER_TEMP/race-a.txt"
+          out_b="$RUNNER_TEMP/race-b.txt"
+          "${compose[@]}" exec -T postgres psql --quiet --no-align --tuples-only \
+            --username=frankensteinz --dbname=frankensteinz \
+            --command="SELECT job_id FROM fzh.lease_next_job('race-a',300,'test.concurrent');" >"$out_a" &
+          pid_a=$!
+          "${compose[@]}" exec -T postgres psql --quiet --no-align --tuples-only \
+            --username=frankensteinz --dbname=frankensteinz \
+            --command="SELECT job_id FROM fzh.lease_next_job('race-b',300,'test.concurrent');" >"$out_b" &
+          pid_b=$!
+          wait "$pid_a"
+          wait "$pid_b"
+
+          winners=0
+          [[ -s "$out_a" ]] && winners=$((winners + 1))
+          [[ -s "$out_b" ]] && winners=$((winners + 1))
+          if [[ "$winners" -ne 1 ]]; then
+            echo "expected exactly one lease winner; got $winners" >&2
+            echo "race-a: $(cat "$out_a")" >&2
+            echo "race-b: $(cat "$out_b")" >&2
+            exit 1
+          fi
+
+          "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 --quiet --no-align --tuples-only \
+            --username=frankensteinz --dbname=frankensteinz <<'SQL' | grep -qx '1'
+          SELECT count(*)
+          FROM fzh.jobs
+          WHERE job_kind='test.concurrent'
+            AND status='leased'
+            AND attempt_count=1
+            AND lease_count=1
+            AND lease_owner IN ('race-a','race-b');
+          SQL
+
+      - name: Prove new ledger schema survives backup and restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          backup_dir="$RUNNER_TEMP/fzh-backups"
+          install -d -m 0700 "$backup_dir"
+          echo "FZH_BACKUP_DIR=$backup_dir" >> "$GITHUB_ENV"
+          export FZH_BACKUP_DIR="$backup_dir"
+          backup_path="$(bash scripts/postgres/backup.sh)"
+          test -s "$backup_path"
+          bash scripts/postgres/restore-test.sh "$backup_path"
+
+      - name: Tear down ledger test state
+        if: always()
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml --profile restore-test down -v --remove-orphans
