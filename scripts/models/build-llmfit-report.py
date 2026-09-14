@@ -128,14 +128,9 @@ def main() -> int:
             for path in source_files
         },
     }
-    manifest_path = bundle / "manifest.json"
-    manifest_path.write_text(
+    (bundle / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-
-    # Add hashes for generated files without creating a self-referential
-    # manifest hash.
-    print(bundle)
     return 0
 
 
