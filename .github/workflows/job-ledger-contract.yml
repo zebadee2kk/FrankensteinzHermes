@@ -5,6 +5,7 @@ on:
     paths:
       - 'db/migrations/0003_job_ledger.sql'
       - 'db/migrations/0004_job_ledger_budget_accounting.sql'
+      - 'db/migrations/0005_job_ledger_reaper_hardening.sql'
       - 'tests/sql/job_ledger_contract.sql'
       - 'scripts/jobs/**'
       - 'scripts/validate_job_ledger.py'
@@ -16,6 +17,7 @@ on:
     paths:
       - 'db/migrations/0003_job_ledger.sql'
       - 'db/migrations/0004_job_ledger_budget_accounting.sql'
+      - 'db/migrations/0005_job_ledger_reaper_hardening.sql'
       - 'tests/sql/job_ledger_contract.sql'
       - 'scripts/jobs/**'
       - 'scripts/validate_job_ledger.py'
