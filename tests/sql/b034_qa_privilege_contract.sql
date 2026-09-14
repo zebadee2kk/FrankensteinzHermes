@@ -19,11 +19,15 @@ BEGIN
     IF NOT has_function_privilege('fzh_b034_qa', 'fzh.b034_lease_job(text,integer)', 'EXECUTE')
        OR NOT has_function_privilege('fzh_b034_qa', 'fzh.b034_record_gate(uuid,uuid,text,text,text,uuid,text)', 'EXECUTE')
        OR NOT has_function_privilege('fzh_b034_qa', 'fzh.b034_start_job(uuid,uuid)', 'EXECUTE')
+       OR NOT has_function_privilege('fzh_b034_qa', 'fzh.b034_begin_profile_effect(uuid,uuid,text)', 'EXECUTE')
+       OR NOT has_function_privilege('fzh_b034_qa', 'fzh.b034_commit_profile_effect(uuid,uuid,text,text)', 'EXECUTE')
        OR NOT has_function_privilege('fzh_b034_qa', 'fzh.b034_complete_job(uuid,uuid,jsonb)', 'EXECUTE') THEN
         RAISE EXCEPTION 'B034 QA is missing an intended capability function';
     END IF;
 
     IF has_function_privilege('fzh_b034_qa', 'fzh.lease_next_job(text,integer,text)', 'EXECUTE')
+       OR has_function_privilege('fzh_b034_qa', 'fzh.begin_job_effect(uuid,uuid,text,jsonb,text)', 'EXECUTE')
+       OR has_function_privilege('fzh_b034_qa', 'fzh.commit_job_effect(uuid,uuid,text,text,text)', 'EXECUTE')
        OR has_function_privilege('fzh_b034_qa', 'fzh.complete_job(uuid,uuid,jsonb,text)', 'EXECUTE')
        OR has_function_privilege('fzh_b034_qa', 'fzh.b032_begin_candidate_effect(uuid,uuid)', 'EXECUTE')
        OR has_function_privilege('fzh_b034_qa', 'fzh.b033_start_job(uuid,uuid)', 'EXECUTE')
@@ -78,6 +82,13 @@ SELECT fzh.b034_record_gate(
 );
 SELECT fzh.b034_start_job(:'job_id'::uuid, :'lease_token'::uuid);
 SELECT fzh.b034_heartbeat(:'job_id'::uuid, :'lease_token'::uuid, 300);
+SELECT fzh.b034_begin_profile_effect(:'job_id'::uuid, :'lease_token'::uuid, 'python-unit');
+SELECT fzh.b034_commit_profile_effect(
+    :'job_id'::uuid,
+    :'lease_token'::uuid,
+    'python-unit',
+    repeat('c', 64)
+);
 SELECT fzh.b034_complete_job(
     :'job_id'::uuid,
     :'lease_token'::uuid,
@@ -95,6 +106,8 @@ DECLARE
     v_qa_status text;
     v_neighbor_bad integer;
     v_gate_count integer;
+    v_effect_status text;
+    v_effect_receipt text;
 BEGIN
     SELECT job_id INTO v_job_id FROM b034_contract_context;
     SELECT status, result->>'qa_status' INTO v_status, v_qa_status
@@ -117,6 +130,14 @@ BEGIN
       AND decision = 'allow';
     IF v_gate_count <> 1 THEN
         RAISE EXCEPTION 'expected exactly one persisted B030 gate decision';
+    END IF;
+
+    SELECT status, external_receipt INTO v_effect_status, v_effect_receipt
+    FROM fzh.job_effects
+    WHERE job_id = v_job_id
+      AND effect_key = 'b034:qa-profile:' || v_job_id::text || ':python-unit';
+    IF v_effect_status <> 'committed' OR v_effect_receipt <> repeat('c', 64) THEN
+        RAISE EXCEPTION 'B034 QA effect invalid: status=%, receipt=%', v_effect_status, v_effect_receipt;
     END IF;
 END;
 $$;
