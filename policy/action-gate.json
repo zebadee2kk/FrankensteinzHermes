@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "risk_defaults": {
+    "L0": "allow",
+    "L1": "allow",
+    "L2": "approval_required",
+    "L3": "approval_required"
+  },
+  "hard_deny_actions": [
+    "action_gate_policy_modify",
+    "action_gate_executable_modify",
+    "action_gate_kill_switch_modify",
+    "credential_export",
+    "secret_export",
+    "secret_to_llm"
+  ],
+  "approval_required_actions": [
+    "production_write",
+    "production_deploy",
+    "external_message_send",
+    "financial_transaction",
+    "identity_permission_change",
+    "provider_enable",
+    "paid_inference_enable",
+    "security_offensive_external"
+  ],
+  "l0": {
+    "side_effecting_must_be": false
+  },
+  "l1": {
+    "reversible_must_be": true,
+    "forbidden_environments": ["production", "external"],
+    "external_side_effect_must_be": false
+  },
+  "secret": {
+    "deny_if_uses_llm": true,
+    "deny_if_external_side_effect": true
+  }
+}

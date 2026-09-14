@@ -1,0 +1,73 @@
+name: action gate contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/action-gate-contract.yml'
+      - 'policy/action-gate.json'
+      - 'scripts/action_gate/**'
+      - 'scripts/validate_action_gate.py'
+      - 'deploy/systemd/fzh-action-gate.service'
+      - 'tests/test_action_gate.py'
+      - 'docs/operations/ACTION-GATE.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/action-gate-contract.yml'
+      - 'policy/action-gate.json'
+      - 'scripts/action_gate/**'
+      - 'scripts/validate_action_gate.py'
+      - 'deploy/systemd/fzh-action-gate.service'
+      - 'tests/test_action_gate.py'
+      - 'docs/operations/ACTION-GATE.md'
+
+permissions:
+  contents: read
+
+jobs:
+  action-gate-contract:
+    name: action-gate-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Compile gate source
+        run: python -m compileall -q scripts/action_gate scripts/validate_action_gate.py tests/test_action_gate.py
+
+      - name: Validate authority boundaries
+        run: python scripts/validate_action_gate.py
+
+      - name: Run deterministic decision tests
+        run: python -m unittest -v tests.test_action_gate
+
+      - name: Validate deployment shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/action_gate/install.sh
+          bash -n scripts/action_gate/verify.sh
+
+      - name: Prove unavailable gate fails closed at client boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          request='{"request_id":"ci-unavailable","actor":"ci","action_type":"read_status","risk_level":"L0","environment":"local","data_classification":"PUBLIC","target":"health","side_effecting":false,"reversible":true,"external_side_effect":false,"uses_llm":false,"metadata":{}}'
+          set +e
+          result="$(printf '%s\n' "$request" | python scripts/action_gate/client.py)"
+          rc=$?
+          set -e
+          [[ "$rc" -eq 30 ]] || { echo "unavailable gate did not fail closed: rc=$rc result=$result" >&2; exit 1; }
+          python - "$result" <<'PY'
+          import json, sys
+          value = json.loads(sys.argv[1])
+          assert value["decision"] == "deny"
+          assert value["reason"].startswith("gate_unavailable:")
+          PY
