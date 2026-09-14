@@ -1,0 +1,160 @@
+name: model registry contract
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/model-registry-contract.yml'
+      - 'db/migrations/**'
+      - 'scripts/models/import-llmfit-evidence.sh'
+      - 'scripts/models/prepare-llmfit-evidence-import.py'
+      - 'scripts/models/rank-models.sh'
+      - 'tests/model_registry_contract.sql'
+      - 'docs/operations/MODEL-REGISTRY.md'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/model-registry-contract.yml'
+      - 'db/migrations/**'
+      - 'scripts/models/import-llmfit-evidence.sh'
+      - 'scripts/models/prepare-llmfit-evidence-import.py'
+      - 'scripts/models/rank-models.sh'
+      - 'tests/model_registry_contract.sql'
+      - 'docs/operations/MODEL-REGISTRY.md'
+
+permissions:
+  contents: read
+
+jobs:
+  model-registry-contract:
+    name: model-registry-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Validate model registry scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m compileall -q scripts/models/prepare-llmfit-evidence-import.py
+          bash -n scripts/models/import-llmfit-evidence.sh
+          bash -n scripts/models/rank-models.sh
+
+      - name: Create ephemeral PostgreSQL secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_file="$RUNNER_TEMP/fzh-secrets/postgres_password"
+          install -d -m 0700 "$(dirname "$secret_file")"
+          openssl rand -base64 36 > "$secret_file"
+          chmod 0600 "$secret_file"
+          echo "FZH_POSTGRES_PASSWORD_FILE=$secret_file" >> "$GITHUB_ENV"
+
+      - name: Start PostgreSQL and apply migrations twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml up -d postgres
+          for _ in $(seq 1 60); do
+            if docker compose -f deploy/compose/compose.yaml exec -T postgres \
+              pg_isready --username=frankensteinz --dbname=frankensteinz >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            pg_isready --username=frankensteinz --dbname=frankensteinz
+          bash scripts/postgres/migrate.sh
+          bash scripts/postgres/migrate.sh
+
+      - name: Exercise classification, freshness, promotion and hardware policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            < tests/model_registry_contract.sql
+
+      - name: Build synthetic B025 evidence fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/b025-fixture"
+          mkdir -p "$bundle"
+          python - "$bundle" <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+
+          bundle = pathlib.Path(sys.argv[1])
+          system = {"cpu": {"model": "CI synthetic CPU", "cores": 8}, "ram_gb": 32, "gpu": None}
+          profiles = {}
+          files = {}
+          for use_case, score in (("general", 0.72), ("coding", 0.75), ("reasoning", 0.78)):
+              name = f"recommend-{use_case}.json"
+              payload = [{"name": "fixture-model", "fit": "good", "score": score, "quantization": "fixture-q4"}]
+              raw = (json.dumps(payload, sort_keys=True) + "\n").encode()
+              (bundle / name).write_bytes(raw)
+              files[name] = {"sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+              profiles[use_case] = {"source": name, "candidate_count": 1, "candidates": [{"name": "fixture-model", "raw": payload[0]}]}
+
+          report = {
+              "schema_version": 1,
+              "generated_at_utc": "2026-09-14T12:00:00+00:00",
+              "synthetic_hardware_overrides": True,
+              "llmfit_version_output": "llmfit 1.1.15",
+              "system": system,
+              "doctor_exit_code": 0,
+              "profiles": profiles,
+              "promotion_authorized": False,
+              "next_gate": "B026 model evaluation registry",
+          }
+          manifest = {
+              "schema_version": 1,
+              "synthetic_hardware_overrides": True,
+              "files": files,
+          }
+          (bundle / "candidate-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+          (bundle / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+          PY
+          echo "FZH_B025_FIXTURE=$bundle" >> "$GITHUB_ENV"
+
+      - name: Import B025 evidence twice and prove non-promotion/idempotency
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/models/import-llmfit-evidence.sh "$FZH_B025_FIXTURE"
+          bash scripts/models/import-llmfit-evidence.sh "$FZH_B025_FIXTURE"
+
+          evidence_count="$(docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            psql --quiet --tuples-only --no-align --username=frankensteinz --dbname=frankensteinz \
+            --command="SELECT count(*) FROM fzh.model_candidate_evidence WHERE source_system='llmfit' AND source_candidate_name='fixture-model';" | tr -d '[:space:]')"
+          [[ "$evidence_count" == "3" ]] || { echo "expected 3 deduplicated evidence rows, got $evidence_count" >&2; exit 1; }
+
+          candidate_count="$(docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            psql --quiet --tuples-only --no-align --username=frankensteinz --dbname=frankensteinz \
+            --command="SELECT count(*) FROM fzh.model_candidates WHERE model_id='fixture-model' OR candidate_key='fixture-model';" | tr -d '[:space:]')"
+          [[ "$candidate_count" == "0" ]] || { echo "B025 import auto-created/promoted a candidate" >&2; exit 1; }
+
+      - name: Verify router-facing fail-closed query
+        shell: bash
+        run: |
+          set -euo pipefail
+          result="$(bash scripts/models/rank-models.sh planner SECRET)"
+          python - "$result" <<'PY'
+          import json, sys
+          assert json.loads(sys.argv[1]) == []
+          PY
+
+      - name: Tear down registry test state
+        if: always()
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml down -v --remove-orphans
