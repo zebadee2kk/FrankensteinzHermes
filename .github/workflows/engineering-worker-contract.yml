@@ -6,9 +6,12 @@ on:
       - 'scripts/engineering_worker/**'
       - 'scripts/validate_engineering_worker.py'
       - 'config/engineering-worker.example.json'
+      - 'db/migrations/0006_b032_worker_api.sql'
       - 'tests/test_engineering_worker.py'
+      - 'tests/sql/b032_worker_privilege_contract.sql'
       - 'tests/helpers/fake_engineering_model.py'
       - 'tests/helpers/fake_action_gate*.py'
+      - 'tests/helpers/fake_engineering_ledger.py'
       - 'docs/operations/ENGINEERING-WORKER.md'
       - '.github/workflows/engineering-worker-contract.yml'
   push:
@@ -17,9 +20,12 @@ on:
       - 'scripts/engineering_worker/**'
       - 'scripts/validate_engineering_worker.py'
       - 'config/engineering-worker.example.json'
+      - 'db/migrations/0006_b032_worker_api.sql'
       - 'tests/test_engineering_worker.py'
+      - 'tests/sql/b032_worker_privilege_contract.sql'
       - 'tests/helpers/fake_engineering_model.py'
       - 'tests/helpers/fake_action_gate*.py'
+      - 'tests/helpers/fake_engineering_ledger.py'
       - 'docs/operations/ENGINEERING-WORKER.md'
       - '.github/workflows/engineering-worker-contract.yml'
 
@@ -30,7 +36,7 @@ jobs:
   engineering-worker-contract:
     name: engineering-worker-contract
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,6 +55,61 @@ jobs:
       - name: Run isolated worker contract tests
         run: python -m unittest -v tests.test_engineering_worker
 
+      - name: Create ephemeral PostgreSQL secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          secret_file="$RUNNER_TEMP/fzh-secrets/postgres_password"
+          install -d -m 0700 "$(dirname "$secret_file")"
+          openssl rand -base64 36 > "$secret_file"
+          chmod 0600 "$secret_file"
+          echo "FZH_POSTGRES_PASSWORD_FILE=$secret_file" >> "$GITHUB_ENV"
+
+      - name: Start PostgreSQL and apply migrations twice
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml up -d postgres
+          for _ in $(seq 1 60); do
+            if docker compose -f deploy/compose/compose.yaml exec -T postgres \
+              pg_isready --username=frankensteinz --dbname=frankensteinz >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            pg_isready --username=frankensteinz --dbname=frankensteinz
+          bash scripts/postgres/migrate.sh
+          bash scripts/postgres/migrate.sh
+
+      - name: Prove B032 role cannot bypass capability API
+        shell: bash
+        run: |
+          set -euo pipefail
+          compose=(docker compose -f deploy/compose/compose.yaml)
+
+          if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 \
+            --username=frankensteinz --dbname=frankensteinz \
+            --command="SET ROLE fzh_b032_worker; SELECT count(*) FROM fzh.jobs;"; then
+            echo 'B032 worker unexpectedly read fzh.jobs directly' >&2
+            exit 1
+          fi
+
+          if "${compose[@]}" exec -T postgres psql --set=ON_ERROR_STOP=1 \
+            --username=frankensteinz --dbname=frankensteinz \
+            --command="SET ROLE fzh_b032_worker; SELECT * FROM fzh.lease_next_job('bypass',300,'engineering.implement');"; then
+            echo 'B032 worker unexpectedly executed generic lease_next_job' >&2
+            exit 1
+          fi
+
+      - name: Exercise scoped B032 ledger lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose -f deploy/compose/compose.yaml exec -T postgres \
+            psql --set=ON_ERROR_STOP=1 --username=frankensteinz --dbname=frankensteinz \
+            < tests/sql/b032_worker_privilege_contract.sql
+
       - name: Confirm contract never contacted a provider
         shell: bash
         run: |
@@ -56,3 +117,8 @@ jobs:
           # The test configuration points only to the deterministic fake model.
           # No LiteLLM/OpenRouter credential is provisioned in this workflow.
           [[ -z "${FZH_LITELLM_API_KEY:-}" ]]
+
+      - name: Tear down engineering worker contract state
+        if: always()
+        shell: bash
+        run: docker compose -f deploy/compose/compose.yaml down -v --remove-orphans
