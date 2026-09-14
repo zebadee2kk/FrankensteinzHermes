@@ -69,7 +69,7 @@ class EngineeringWorkerTests(unittest.TestCase):
             "test_allowlist": {
                 "value-check": [sys.executable, "-c", "from pathlib import Path; assert Path('app/value.txt').read_text() == 'new\\n'"]
             },
-            "forbidden_path_prefixes": [".git/", ".github/", "policy/", "scripts/action_gate/", "bootstrap/"],
+            "forbidden_path_prefixes": [".github/", "policy/", "scripts/action_gate/", "bootstrap/"],
             "forbidden_paths": [
                 "docs/AUTONOMY-CONSTITUTION.md", "docs/ARCHITECTURE.md",
                 "docs/THREAT-MODEL.md", "config/autonomy-policy.example.yaml",
