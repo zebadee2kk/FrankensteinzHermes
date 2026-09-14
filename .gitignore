@@ -23,6 +23,7 @@ workspaces/
 quarantine/
 artifacts/
 backups/
+evidence/
 *.dump
 *.db
 *.sqlite*
