@@ -1,0 +1,58 @@
+name: engineering worker contract
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/engineering_worker/**'
+      - 'scripts/validate_engineering_worker.py'
+      - 'config/engineering-worker.example.json'
+      - 'tests/test_engineering_worker.py'
+      - 'tests/helpers/fake_engineering_model.py'
+      - 'tests/helpers/fake_action_gate*.py'
+      - 'docs/operations/ENGINEERING-WORKER.md'
+      - '.github/workflows/engineering-worker-contract.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/engineering_worker/**'
+      - 'scripts/validate_engineering_worker.py'
+      - 'config/engineering-worker.example.json'
+      - 'tests/test_engineering_worker.py'
+      - 'tests/helpers/fake_engineering_model.py'
+      - 'tests/helpers/fake_action_gate*.py'
+      - 'docs/operations/ENGINEERING-WORKER.md'
+      - '.github/workflows/engineering-worker-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  engineering-worker-contract:
+    name: engineering-worker-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Compile worker and test sources
+        run: python -m compileall -q scripts/engineering_worker scripts/validate_engineering_worker.py tests/test_engineering_worker.py tests/helpers
+
+      - name: Validate static authority and budget invariants
+        run: python scripts/validate_engineering_worker.py
+
+      - name: Run isolated worker contract tests
+        run: python -m unittest -v tests.test_engineering_worker
+
+      - name: Confirm contract never contacted a provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The test configuration points only to the deterministic fake model.
+          # No LiteLLM/OpenRouter credential is provisioned in this workflow.
+          [[ -z "${FZH_LITELLM_API_KEY:-}" ]]
