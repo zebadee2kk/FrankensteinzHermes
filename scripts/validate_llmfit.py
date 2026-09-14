@@ -11,6 +11,7 @@ gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
 required_installer = [
     'LLMFIT_VERSION="1.1.15"',
     'LLMFIT_PLATFORM="x86_64-unknown-linux-gnu"',
+    'EXPECTED_ARCHIVE_SHA256="fe0d4987376fae21cc1461f72a348a93c88cfacd2aec4356c15ba30603dcc731"',
     '${ASSET}.sha256',
     'sha256sum --check --strict',
 ]
@@ -26,9 +27,8 @@ for fragment in (
     "GITHUB_TOKEN",
     "GH_TOKEN",
     "LLMFIT_GH_CLIENT_ID=",
-    "promotion_authorized",
 ):
-    if fragment not in capture and fragment != "promotion_authorized":
+    if fragment not in capture:
         raise SystemExit(f"llmfit capture missing required invariant: {fragment}")
 
 if "bench --share" in capture:
