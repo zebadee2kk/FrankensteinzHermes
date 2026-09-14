@@ -27,6 +27,16 @@ Before candidate execution B034 verifies:
 
 Admission mismatch is a terminal `reject` and candidate code is not executed.
 
+## Durable execution effects
+
+B034 is side-effecting from the ledger's point of view because it deliberately executes untrusted candidate code. Every selected QA profile therefore has its own B031 idempotency/effect record:
+
+`b034:qa-profile:<qa-job-id>:<profile-id>`
+
+The stage-specific `fzh.b034_begin_profile_effect(...)` wrapper is called immediately before the sandbox adapter. After the adapter returns, the canonical sandbox result is SHA-256 hashed and committed through `fzh.b034_commit_profile_effect(...)`. B034 has no direct access to the generic B031 effect functions.
+
+This is a crash/replay boundary, not merely audit metadata. If a worker fails before any profile effect begins, ordinary retry policy may apply. Once a profile effect exists, B031 `fail_job` and lease reaping force the attempt to `reconciliation_required`; the system must determine what happened before the profile may be replayed. A sandbox/runtime failure after effect start is therefore intentionally **not** blindly retried.
+
 ## Sandbox boundary
 
 Production profile execution uses `scripts/engineering_qa/bwrap_sandbox_adapter.py` behind a user-systemd transient unit. The adapter reads commands/resource policy only from `/etc/frankensteinzhermes/qa-profiles.json`, which must be root-owned and not group/world writable.
@@ -58,16 +68,17 @@ The service account needs a working `systemd --user` manager. Provision that thr
 
 ## Database identity
 
-Runtime database login is provisioned out-of-band and granted membership only in NOLOGIN role `fzh_b034_qa`. Migration `0008_b034_qa_api.sql` gives that role no table/sequence privileges, no generic B031 functions, no B032 candidate-effect functions, and no B033 review functions. Stage wrappers additionally assert that the target job kind is exactly `engineering.qa`.
+Runtime database login is provisioned out-of-band and granted membership only in NOLOGIN role `fzh_b034_qa`. Migration `0008_b034_qa_api.sql` gives that role no table/sequence privileges, no generic B031 functions, no B032 candidate-effect functions, and no B033 review functions. Stage wrappers additionally assert that the target job kind is exactly `engineering.qa` and expose only per-profile B034 effect wrappers.
 
 ## Outcome policy
 
 - evidence/admission mismatch: `reject`, no candidate execution;
-- sandbox infrastructure/adapter failure: retryable job failure;
-- any selected profile `fail`, `timeout`, or `output_exhausted`: terminal `qa_failed`;
+- pre-effect infrastructure/model/clone failure: retry policy may apply;
+- failure after a profile effect has begun: B031 forces `reconciliation_required` before replay;
+- any completed selected profile returning `fail`, `timeout`, or `output_exhausted`: terminal `qa_failed`;
 - all selected profiles pass: `qa_passed`, next stage `B035 security review`;
 - B034 never authorizes promotion.
 
 ## CI contract
 
-`.github/workflows/engineering-qa-contract.yml` uses deterministic fake gate/model/ledger/sandbox adapters for coordinator tests. It never gives the test job provider credentials or GitHub write permission. A separate ephemeral PostgreSQL contract proves the B034 role cannot read tables or call generic/B032/B033 functions, while it can complete only an `engineering.qa` job and leaves neighboring implementation/review jobs untouched.
+`.github/workflows/engineering-qa-contract.yml` uses deterministic fake gate/model/ledger/sandbox adapters for coordinator tests. It never gives the test job provider credentials or GitHub write permission. Effect-specific tests prove successful profiles record begin/commit pairs and infrastructure failure after effect start leaves an uncommitted effect. A separate ephemeral PostgreSQL contract proves the B034 role cannot read tables or call generic/B032/B033 functions, while it can complete only an `engineering.qa` job through stage-specific effect wrappers and leaves neighboring implementation/review jobs untouched.
