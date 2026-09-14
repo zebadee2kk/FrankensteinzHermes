@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "ledger": {
+    "adapter_command": ["python3", "scripts/engineering_qa/ledger_psql.py"],
+    "heartbeat_seconds": 900,
+    "retry_delay_seconds": 60
+  },
+  "model": {
+    "enabled": true,
+    "adapter_command": ["python3", "scripts/engineering_qa/litellm_adapter.py"],
+    "alias": "fzh-free-auto",
+    "max_calls": 1,
+    "max_prompt_bytes": 262144,
+    "max_output_tokens": 2048,
+    "max_response_bytes": 131072,
+    "timeout_seconds": 120,
+    "max_profile_suggestions": 8
+  },
+  "sandbox": {
+    "adapter_command": ["python3", "scripts/engineering_qa/bwrap_sandbox_adapter.py"],
+    "allowed_profile_ids": ["python-unit", "repo-governance"],
+    "baseline_profile_ids": ["python-unit", "repo-governance"],
+    "max_profiles": 8,
+    "max_adapter_response_bytes": 2097152
+  },
+  "budgets": {
+    "max_wall_seconds": 900,
+    "max_git_commands": 20,
+    "max_review_diff_bytes": 262144,
+    "max_evidence_bytes": 1048576
+  }
+}
